@@ -81,9 +81,6 @@ public final class World {
             }
             d.builder().build(w, c);
         }
-        for (Course c : w.courses) {
-            Scenery.rings(plan, c);
-        }
         plan.connect();
         return w;
     }
@@ -143,6 +140,9 @@ public final class World {
         if (water != Integer.MIN_VALUE && y <= water) {
             return "minecraft:water";
         }
+        if (y > h + 5 && terrain.cloudAt(x, y, z, h)) {
+            return "minecraft:" + Terrain.CLOUD;
+        }
         if (y > h && y < h + 20) {
             for (Trees.Tree t : trees.around(x, z, x, z)) {
                 for (Trees.Part p : Trees.parts(t)) {
@@ -163,6 +163,9 @@ public final class World {
         }
         int h = terrain.height(x, z);
         if (y <= h) {
+            return true;
+        }
+        if (y > h + 5 && terrain.cloudAt(x, y, z, h)) {
             return true;
         }
         if (y < h + 20) {

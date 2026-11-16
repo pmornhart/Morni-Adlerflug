@@ -52,10 +52,25 @@ public final class Designs {
                 .landing(556.5, 84, -176.5, 45)
                 .build(3);
         return new Design(c, t -> {
-            t.shape(new Terrain.Plateau(580, -50, 230, 120, 90, 7));
+            // Almtal: Wiesenboden mit Bergsee, ringsum steigen die Hänge zu Graten und Schneegipfeln
+            t.shape(new Terrain.Plateau(612, -48, 92, 80, 88, 4));
+            t.shape(new Terrain.Plateau(500, 40, 50, 50, 92, 3));
             t.shape(new Terrain.Mound(396, 0, 36, 118, 1.6, 4));
+            // Felskopf am See, von dem der Wasserfall stürzt
+            t.shape(new Terrain.Mound(684, -80, 40, 122, 1.5, 11));
             t.lake(new Terrain.Lake(620, -60, 26, 85));
-            t.region(new Terrain.Region(580, -50, 340, Terrain.Style.ALM));
+            // der Felskopf bricht zum See als Wand ab (dort stürzt der Wasserfall hinunter)
+            t.shape(new Terrain.Basin(624, -62, 40, 3, 86));
+            // Schneegipfel hinter dem Tal
+            t.shape(new Terrain.Mound(900, -60, 120, 286, 1.5, 18));
+            t.shape(new Terrain.Mound(820, 230, 110, 262, 1.5, 16));
+            t.shape(new Terrain.Mound(560, -330, 100, 250, 1.5, 16));
+            t.region(new Terrain.Region(600, -40, 320, Terrain.Style.ALM));
+            // Wanderwege: Kapelle – Hütten – Steg am See – Heustadel
+            t.path(1.2, 470, -36, 522, -30, 560, -46, 596, -58);
+            t.path(1.0, 522, -30, 540, 10, 528, 60, 512, 95);
+            t.path(1.0, 560, -46, 600, 0, 614, 50, 616, 82);
+            t.path(1.0, 614, 50, 650, 96);
         }, Design.cut(8, 16, 0.45), Builders::alm, "lime_concrete", null);
     }
 
@@ -125,7 +140,7 @@ public final class Designs {
                 .landing(-528.5, 98, -108.5, -90)
                 .build(3);
         return new Design(c, t -> {
-            t.shape(new Terrain.Plateau(-560, -40, 220, 120, 92, 6));
+            t.shape(new Terrain.Plateau(-565, -35, 115, 90, 92, 6));
             t.shape(new Terrain.Mound(-600, 0, 80, 118, 1.8, 6));
             t.shape(new Terrain.Plateau(-600, 0, 36, 12, 118));
             t.shape(new Terrain.Mound(-396, 0, 40, 124, 1.5, 4));

@@ -819,8 +819,8 @@ public final class Flights {
             }
         }
         // Wegweiser: Funken am Rand des nächsten Rings (nur für diesen Spieler)
-        if (next != null && tick % 8 == 0 && f.state != Flight.State.FROZEN) {
-            rim(p, next, next.finish() ? Particle.WAX_ON : Particle.END_ROD, 16);
+        if (next != null && tick % 4 == 0 && f.state != Flight.State.FROZEN) {
+            pl.tint().highlight(p, next, tick);
         }
         // Geist der Bestzeit: ein kleiner Adler aus blauen Funken fliegt den besten Weg mit
         if (f.ghost != null && f.state == Flight.State.FLYING && f.clock != null) {
@@ -838,19 +838,6 @@ public final class Flights {
                     p.spawnParticle(Particle.DUST, gx - side.x() * k, gy + lift, gz - side.z() * k, 1, 0, 0, 0, 0, GHOST_WING);
                 }
             }
-        }
-    }
-
-    /** Funken rundherum am Rand eines Rings. */
-    static void rim(Player p, Ring r, Particle particle, int n) {
-        Vec u = Vec.UP.cross(r.normal());
-        u = u.length() < 1e-6 ? new Vec(1, 0, 0) : u.normalize();
-        Vec w = r.normal().cross(u).normalize();
-        double rad = r.radius() + 0.2;
-        for (int i = 0; i < n; i++) {
-            double a = 2 * Math.PI * i / n;
-            Vec q = r.center().add(u.mul(Math.cos(a) * rad)).add(w.mul(Math.sin(a) * rad));
-            p.spawnParticle(particle, q.x(), q.y(), q.z(), 1, 0, 0, 0, 0);
         }
     }
 

@@ -12,7 +12,11 @@ import java.util.List;
 public final class Corridor {
 
     private static final int RES = 2;
-    private static final double MAX_INFLUENCE = 170;
+    private static final double MAX_INFLUENCE = 260;
+    /** Weiter weg werden die Hänge immer steiler (Trogtal): ab dieser Höhe wirkt die Schneise nicht mehr. */
+    private static final double TOP = 330;
+    /** Zusätzliche Krümmung der Hänge (Blöcke pro Block²) – so laufen die Talwände ohne Kante in die Berge über. */
+    private static final double BEND = 0.009;
     private static final float NONE = Float.POSITIVE_INFINITY;
 
     private final int minX;
@@ -21,7 +25,9 @@ public final class Corridor {
     private final int h;
     private final float[] ceil;
     private final float[] dist;
+    private final float[] fly;
     private final double clearance;
+    private final double lowestFlight;
 
     /**
      * @param path      Punkte des Musterflugs (alle paar Blöcke einer)
@@ -31,7 +37,19 @@ public final class Corridor {
      */
     public Corridor(List<Vec> path, double clearance, double floor, double slope) {
         this.clearance = clearance;
-        double influence = Math.min(MAX_INFLUENCE, floor + 260 / Math.max(0.05, slope));
+        double low = Double.POSITIVE_INFINITY;
+        for (Vec p : path) {
+            low = Math.min(low, p.y());
+        }
+        this.lowestFlight = low;
+        double lowest = Double.POSITIVE_INFINITY;
+        for (Vec p : path) {
+            lowest = Math.min(lowest, p.y() - clearance);
+        }
+        // so weit, bis die Talwand über die höchsten Berge reicht (sonst entstünde am Rand eine Stufe)
+        double rise = Math.max(0, TOP - lowest);
+        double reachOut = (-slope + Math.sqrt(slope * slope + 4 * BEND * rise)) / (2 * BEND);
+        double influence = Math.min(MAX_INFLUENCE, floor + reachOut);
         double x0 = Double.MAX_VALUE;
         double z0 = Double.MAX_VALUE;
         double x1 = -Double.MAX_VALUE;
@@ -48,8 +66,10 @@ public final class Corridor {
         h = (int) Math.ceil((z1 + influence - minZ) / RES) + 2;
         ceil = new float[w * h];
         dist = new float[w * h];
+        fly = new float[w * h];
         Arrays.fill(ceil, NONE);
         Arrays.fill(dist, NONE);
+        Arrays.fill(fly, NONE);
         int reach = (int) Math.ceil(influence / RES) + 1;
         for (Vec p : path) {
             int ci = (int) Math.round((p.x() - minX) / RES);
@@ -64,12 +84,14 @@ public final class Corridor {
                         continue;
                     }
                     int k = i + j * w;
-                    float c = (float) (p.y() - clearance + Math.max(0, d - floor) * slope);
+                    double e = Math.max(0, d - floor);
+                    float c = (float) (p.y() - clearance + e * slope + e * e * BEND);
                     if (c < ceil[k]) {
                         ceil[k] = c;
                     }
                     if (d < dist[k]) {
                         dist[k] = (float) d;
+                        fly[k] = (float) p.y();
                     }
                 }
             }
@@ -88,6 +110,16 @@ public final class Corridor {
 
     public double clearance() {
         return clearance;
+    }
+
+    /** Tiefster Punkt des Musterflugs in dieser Schneise. */
+    public double lowestFlight() {
+        return lowestFlight;
+    }
+
+    /** Flughöhe am nächsten Punkt des Musterflugs (unendlich, wenn die Schneise hier nicht wirkt). */
+    public double flightNear(double x, double z) {
+        return sample(fly, x, z);
     }
 
     private double sample(float[] grid, double x, double z) {

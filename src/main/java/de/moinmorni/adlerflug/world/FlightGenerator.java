@@ -97,6 +97,12 @@ public final class FlightGenerator extends ChunkGenerator {
                     data.setBlock(lx, y, lz, data(b));
                 }
                 data.setBlock(lx, top, lz, data(surface));
+                int[] cl = t.clouds(x, z, top);
+                for (int i = 0; i < cl.length; i += 2) {
+                    if (cl[i + 1] > 0) {
+                        data.setRegion(lx, cl[i], lz, lx + 1, cl[i] + cl[i + 1], lz + 1, data(Terrain.CLOUD));
+                    }
+                }
                 int water = t.water(x, z, top);
                 if (water != Integer.MIN_VALUE) {
                     data.setRegion(lx, top + 1, lz, lx + 1, water + 1, lz + 1, data("water"));
@@ -105,7 +111,7 @@ public final class FlightGenerator extends ChunkGenerator {
                             && de.moinmorni.adlerflug.land.Noise.hash(t.seed() + 9, x, z) < 0.5) {
                         data.setBlock(lx, top + 1, lz, data("snow[layers=" + (slope < 1 ? 2 : 1) + "]"));
                     } else {
-                        String plant = t.plant(x, z, top, surface);
+                        String plant = t.plant(x, z, top, surface, slope);
                         if (plant != null) {
                             data.setBlock(lx, top + 1, lz, data(plant));
                         }

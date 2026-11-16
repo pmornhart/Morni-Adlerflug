@@ -49,9 +49,12 @@ public final class Trees {
 
     /** Baum der Zelle (cx, cz) oder null. */
     public Tree at(int cx, int cz) {
+        // Wald in Flecken mit klarem Waldrand, dazwischen offene Almwiesen mit einzelnen Bäumen
         double chance = Noise.hash(seed, cx, cz);
-        double forest = 0.5 + 0.5 * forestNoise.at(cx * CELL / 90.0, cz * CELL / 90.0);
-        if (chance > 0.18 + 0.55 * forest) {
+        double f = forestNoise.fbm(cx * CELL / 160.0, cz * CELL / 160.0, 3)
+                + 0.25 * forestNoise.at(cx * CELL / 37.0 + 50, cz * CELL / 37.0 - 20);
+        double forest = Noise.smooth(-0.02, 0.16, f);
+        if (chance > 0.035 + 0.83 * forest) {
             return null;
         }
         int x = cx * CELL + 1 + (int) (Noise.hash(seed + 1, cx, cz) * (CELL - 2));

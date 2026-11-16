@@ -33,6 +33,19 @@ Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`
   Aufgeben, Übungsmodus, Rennen, Bestzeit, Medaillen, Bestenliste, Englisch, Netzwerk-Statistik, Strecke der Woche
   mit ▲-Abzeichen; alle sechs Strecken mit dem Test-Autopiloten komplett geflogen, jeder Ring gezählt. Server-Log ohne
   Fehler.
+- Verschönerung (16.11. nachmittags, Philip: „das Beste vom Besten“): Landschaft jetzt Hochgebirge – Grundgebirge
+  mit Graten und Schneegipfeln, die Schneisen schneiden Trogtäler hinein (Hänge werden nach außen immer steiler,
+  `Corridor.BEND`, keine Stufe am Rand), Talwände mit Rinnen, Felsbänder und Geröll an Hängen, Büsche/Farn auf den
+  Stufen, Wald in Flecken mit Waldrand, Blumenwiesen mit Hauptblume je Fleck und Blütenteppichen, Wanderwege
+  (`Terrain.path`), Almtal mit Bergsee, Felskopf und Wasserfall, Schneegipfel hinter dem Tal, Wolkenmeer
+  (`Terrain.clouds`) nur 20 Blöcke unter der nächsten Flughöhe. Ringe als Block-Anzeigen (`Scenery.ringParts`,
+  `RingTint`): rund, leuchtend, Goldrand, Saum, Leuchtsteine, Farbverlauf; Funkenkranz am nächsten Ring nur für den
+  Flieger (bis 512 Blöcke), geschaffte Ringe verschwinden für ihn. Anzeige-Reichweite der Welt 320 Blöcke
+  (Spigot-Einstellung nur im Speicher). `Construction.VERSION` 2. Unit-Tests grün (neu `RingPartsTest`). Echter Test
+  danach: 60/61 (Lauf 1: die Absprung-Prüfung verlangte 6 Blöcke Flugweite, mineflayer gleitet nicht und fiel 5,9
+  weit – Grenze auf 4,5 gesetzt; Lauf 2 mit dieser Grenze grün, dort fehlte bei Gipfelkreuz nur die Ziel-Meldung, weil
+  der Test-Spieler auf derselben Welt schon geflogen war – alle 19 Ringe und die Zeit zählten). Bilder v5 mit echtem
+  Client 26.3 (Ich-Sicht im Flug auf allen Strecken, Tempo in der Leiste geprüft: 51–87 km/h).
 - Gefunden und behoben: Tempo (km/h) zeigte immer 0; wer langsam über die Schanzenkante trat, galt sofort als
   gelandet (jetzt kleiner Sprung nach vorn beim Absprung); Test startete, bevor RCON lief (Server wurde gleich wieder beendet); `tp` per RCON ohne
   `execute in` landete in der Oberwelt und blockierte den Server beim Erzeugen.
@@ -42,7 +55,9 @@ Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`
 
 ## Offen
 
-- Philip: Bilder ansehen (nur lokal unter `~/mm-cache/bilder-adlerflug/`), selbst fliegen; Go für `main`.
+- Philip: Bilder ansehen (nur lokal unter `~/mm-cache/bilder-adlerflug/v5/`), selbst fliegen; Go für `main`.
+- Server-Betreiber: Ringe sind Block-Anzeigen – mit kleiner Sichtweite des Servers (`view-distance`) sieht man sie
+  erst später; empfohlen 12 oder mehr.
 - Medaillen-Zeiten nach den ersten echten Flügen nachjustieren (heute aus dem Prüf-Piloten).
 - Im Netzwerk-Repo: Lobby-Figur „Adlerflug“ (`MODE_REPOS`), Webseite (Modus-Seite, Bestenlisten `time_<strecke>_ms`),
   Einstellungs-Katalog (Schlüssel der `config.yml`).

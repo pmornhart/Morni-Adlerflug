@@ -142,7 +142,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         }
         rollWeek();
 
-        tint = new RingTint(model.courses());
+        tint = new RingTint(this, model.courses());
         hotbar = new Hotbar(this);
         menus = new Menus(this);
         flights = new Flights(this);
@@ -151,6 +151,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         new Boards(this).register(holos);
         keepBasecampLoaded();
         holos.start();
+        tint.start(worlds.world());
         new Critters(this, worlds.world(), model.critters()).start();
         flights.start();
         worlds.warmUp(60);

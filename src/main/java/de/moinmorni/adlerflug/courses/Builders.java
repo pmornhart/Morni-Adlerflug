@@ -53,6 +53,10 @@ final class Builders {
             w.critter("sheep", x, t.height(x, z) + 1, z, i * 70);
         }
         jetty(p, t, 596, -60, 85);
+        // Wasserfall vom Felskopf in den Bergsee
+        Vec lake = new Vec(620, 85, -60);
+        Vec toRock = new Vec(684 - 620, 0, -80 + 60).normalize();
+        curtain(p, t, lake, toRock, 99, 14, 60, 84, 2);
     }
 
     /** Holzsteg in den See. */
@@ -99,11 +103,19 @@ final class Builders {
         Ring r = c.rings.get(ring);
         Vec u = across(r).mul(side);
         Vec base = r.center();
-        // zur Wand gehen, bis die Landschaft deutlich über dem Flug liegt
+        curtain(p, t, base, u, base.y() + 10, 4, 30, t.height(base.x(), base.z()), 1);
+    }
+
+    /**
+     * Wasservorhang: von {@code base} in Richtung {@code u} bis zur Wand gehen (Landschaft höher als {@code wallY}), dann
+     * in der Luft direkt vor der Wand Wasser von oben bis {@code bottom}, oben eine Quelle in einer Kerbe.
+     */
+    private static void curtain(Plan p, Terrain t, Vec base, Vec u, double wallY, double from, double to, int bottom,
+                                int half) {
         Vec wall = null;
-        for (double k = 4; k < 30; k += 0.5) {
+        for (double k = from; k < to; k += 0.5) {
             Vec q = base.add(u.mul(k));
-            if (t.height(q.x(), q.z()) > base.y() + 10) {
+            if (t.height(q.x(), q.z()) > wallY) {
                 wall = q;
                 break;
             }
@@ -111,11 +123,9 @@ final class Builders {
         if (wall == null) {
             return;
         }
-        // Wasservorhang vor der Felswand: in der Luft direkt vor der Wand, von oben bis zum Bach
         int top = t.height(wall.x() + u.x() * 3, wall.z() + u.z() * 3);
-        int bottom = t.height(base.x(), base.z());
         Vec front = wall.sub(u);
-        for (int k = -1; k <= 1; k++) {
+        for (int k = -half; k <= half; k++) {
             Vec q = front.add(new Vec(-u.z(), 0, u.x()).mul(k));
             int x = (int) Math.floor(q.x());
             int z = (int) Math.floor(q.z());

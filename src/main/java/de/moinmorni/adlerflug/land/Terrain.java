@@ -127,6 +127,24 @@ public final class Terrain {
         }
     }
 
+    /** Wanderweg: Punkte (x, z), halbe Breite – dort liegt ein Trampelpfad statt Wiese. */
+    public record Path(List<double[]> points, double width) {
+        boolean on(double x, double z) {
+            for (int i = 0; i + 1 < points.size(); i++) {
+                double[] a = points.get(i);
+                double[] b = points.get(i + 1);
+                double dx = b[0] - a[0];
+                double dz = b[1] - a[1];
+                double len2 = dx * dx + dz * dz;
+                double t = len2 == 0 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / len2));
+                if (Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)) <= width) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     /** Gegend mit eigener Oberfläche. */
     public record Region(double cx, double cz, double radius, Style style) {
     }
@@ -136,12 +154,14 @@ public final class Terrain {
     private final Noise hills;
     final Noise ridges;
     final Noise detail;
+    private final Noise clouds;
     private final List<Shape> shapes = new ArrayList<>();
     private final List<Shape> late = new ArrayList<>();
     private final List<Corridor> corridors = new ArrayList<>();
     private final List<Lake> lakes = new ArrayList<>();
     private final List<River> rivers = new ArrayList<>();
     private final List<Region> regions = new ArrayList<>();
+    private final List<Path> paths = new ArrayList<>();
 
     public Terrain(long seed) {
         this.seed = seed;
@@ -149,6 +169,7 @@ public final class Terrain {
         this.hills = new Noise(seed + 1);
         this.ridges = new Noise(seed + 2);
         this.detail = new Noise(seed + 3);
+        this.clouds = new Noise(seed + 4);
     }
 
     public long seed() {
@@ -180,13 +201,41 @@ public final class Terrain {
         regions.add(r);
     }
 
-    /** Grundgebirge ohne Formen (Hügel, Grate, Gipfel). */
+    /** Wanderweg (Punkte x, z) mit halber Breite. */
+    public void path(double width, double... xz) {
+        List<double[]> pts = new ArrayList<>();
+        for (int i = 0; i + 1 < xz.length; i += 2) {
+            pts.add(new double[] {xz[i], xz[i + 1]});
+        }
+        paths.add(new Path(pts, width));
+    }
+
+    /** Liegt hier ein Wanderweg? (Mit kleinen Ausfransungen am Rand.) */
+    public boolean onPath(int x, int z) {
+        double wobble = (Noise.hash(seed + 21, x, z) - 0.5) * 0.9;
+        for (Path p : paths) {
+            if (p.on(x + 0.5 + wobble, z + 0.5 - wobble)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Höchster Gipfel der Landschaft (Platz bis zur Weltgrenze für Schnee und Bauten). */
+    public static final int PEAK = 292;
+
+    /**
+     * Grundgebirge ohne Formen: Täler mit Hügeln, dazwischen Gebirgszüge mit Graten und Schneegipfeln. Die Täler der
+     * Strecken schneiden die Flugschneisen hinein ({@link Corridor}).
+     */
     public double base(double x, double z) {
-        double m = Noise.smooth(-0.35, 0.55, mask.fbm(x / 720.0, z / 720.0, 3));
-        double hill = hills.fbm(x / 170.0, z / 170.0, 4) * 16;
-        double ridge = ridges.ridged(x / 280.0, z / 280.0, 5);
+        double m = Noise.smooth(-0.55, 0.3, mask.fbm(x / 640.0, z / 640.0, 3));
+        double hill = hills.fbm(x / 170.0, z / 170.0, 4) * 18;
+        double ridge = ridges.ridged(x / 250.0, z / 250.0, 5);
         double rough = detail.fbm(x / 38.0, z / 38.0, 2) * 2.5;
-        return 74 + hill + rough + m * (Math.pow(ridge, 1.35) * 165 + 10);
+        double h = 76 + hill + rough + m * (Math.pow(ridge, 1.45) * 205 + 22);
+        // ganz oben runder statt abgeschnitten
+        return h > PEAK - 30 ? PEAK - 30 + 30 * Math.tanh((h - PEAK + 30) / 30) : h;
     }
 
     /** Grate und Felsen für Berge (0 … 1). */
@@ -205,11 +254,14 @@ public final class Terrain {
         for (Shape s : shapes) {
             h = s.apply(this, x, z, h);
         }
+        double top = Double.POSITIVE_INFINITY;
         for (Corridor c : corridors) {
-            double top = c.ceiling(x, z);
-            if (h > top) {
-                h = top;
-            }
+            top = Math.min(top, c.ceiling(x, z));
+        }
+        if (h > top) {
+            // Talwand nicht glatt abgeschnitten, sondern mit Rinnen und Rippen (nur tiefer, nie höher)
+            double gully = 0.5 + 0.5 * ridges.ridged(x / 19.0 - 7, z / 19.0 + 3, 3);
+            h = top - gully * 5 * Math.min(1, (h - top) / 14);
         }
         for (Shape s : late) {
             h = s.apply(this, x, z, h);
@@ -249,10 +301,62 @@ public final class Terrain {
         return Integer.MIN_VALUE;
     }
 
+    /** Höhen der Wolkendecken: man fliegt über sie hinweg (nur dort, wo sie unter jeder Flugschneise liegen). */
+    public static final int[] CLOUD_LAYERS = {150, 196};
+    /** Block der Wolken. */
+    public static final String CLOUD = "white_wool";
+
+    /**
+     * Wolke bei (x, z): Untergrenze und Dicke je Wolkendecke ({@code out[2·i]}, {@code out[2·i+1]}, Dicke 0 = keine).
+     * Wolken liegen nie in einer Schneise (mindestens 8 Blöcke unter jedem Flug, seitlich Abstand) und nie im Berg.
+     */
+    public int[] clouds(int x, int z, int ground) {
+        int[] out = new int[CLOUD_LAYERS.length * 2];
+        double sky = skyLimit(x, z);
+        double away = corridorDistance(x, z);
+        // Wolken nur, wo jede Strecke in der Nähe hoch darüber fliegt (von unten sähe man nur graue Bäuche)
+        double lowest = Double.POSITIVE_INFINITY;
+        for (Corridor c : corridors) {
+            lowest = Math.min(lowest, c.flightNear(x, z));
+        }
+        for (int i = 0; i < CLOUD_LAYERS.length; i++) {
+            int base = CLOUD_LAYERS[i];
+            // nur über tiefen Tälern, weit unter jedem Flug: von oben sieht man auf ein Wolkenmeer hinab
+            if (ground > base - 18 || away < 30) {
+                continue;
+            }
+            double ox = i * 517.0;
+            double c = clouds.fbm((x + ox) / 52.0, (z - ox) / 44.0, 3) + 0.35 * clouds.at((x - ox) / 12.0, (z + ox) / 12.0);
+            double thr = 0.36;
+            if (c <= thr) {
+                continue;
+            }
+            int thick = 1 + (int) Math.min(3, (c - thr) * 9);
+            if (base + thick > sky - 16 || base + thick > lowest - 20) {
+                continue;
+            }
+            out[2 * i] = base;
+            out[2 * i + 1] = thick;
+        }
+        return out;
+    }
+
+    /** Ist bei (x, y, z) Wolke? */
+    public boolean cloudAt(int x, int y, int z, int ground) {
+        int[] c = clouds(x, z, ground);
+        for (int i = 0; i < c.length; i += 2) {
+            if (c[i + 1] > 0 && y >= c[i] && y < c[i] + c[i + 1]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Gegend an (x, z) (für Oberfläche und Bäume). */
     public Style style(double x, double z) {
         for (Region r : regions) {
-            if (Math.hypot(x - r.cx(), z - r.cz()) <= r.radius()) {
+            double edge = r.radius() * (0.86 + 0.24 * (0.5 + 0.5 * detail.fbm(x / 70.0, z / 70.0, 2)));
+            if (Math.hypot(x - r.cx(), z - r.cz()) <= edge) {
                 return r.style();
             }
         }
@@ -313,8 +417,16 @@ public final class Terrain {
             }
             return n < 0.3 ? "moss_block" : "grass_block";
         }
+        if (slope < 1.6 && !paths.isEmpty() && onPath(x, z)) {
+            return n < 0.12 ? "coarse_dirt" : "dirt_path";
+        }
         if (slope >= 2.2) {
             return n < 0.35 ? "coarse_dirt" : (n < 0.6 ? "stone" : "grass_block");
+        }
+        // Hänge: Felsbänder und Geröll in Flecken statt gleichmäßiger Erdstufen
+        if (slope >= 0.9 && detail.fbm(x / 15.0 - 31, z / 15.0 + 9, 2) > 0.18 - 0.08 * slope) {
+            return n < 0.45 ? "stone" : (n < 0.65 ? "andesite" : (n < 0.78 ? "mossy_cobblestone" : (n < 0.9
+                    ? "moss_block" : "gravel")));
         }
         return h > TREE_LINE + 8 && n < 0.3 ? "coarse_dirt" : "grass_block";
     }
@@ -327,7 +439,7 @@ public final class Terrain {
     /** Block unter der Oberfläche (die ersten Schichten). */
     public String under(String surface) {
         return switch (surface) {
-            case "grass_block", "moss_block", "coarse_dirt", "podzol" -> "dirt";
+            case "grass_block", "moss_block", "coarse_dirt", "podzol", "dirt_path" -> "dirt";
             case "snow_block" -> "stone";
             case "gravel" -> "stone";
             default -> surface.equals("packed_ice") ? "packed_ice" : "stone";
@@ -336,24 +448,42 @@ public final class Terrain {
 
     /** Pflanze auf einer Wiese (oder null), fest je Stelle. */
     public String plant(int x, int z, int h, String surface) {
+        return plant(x, z, h, surface, 0);
+    }
+
+    /** Pflanze, abhängig auch von der Neigung (an Hängen Büsche und Farn, die die Stufen weicher machen). */
+    public String plant(int x, int z, int h, String surface, double slope) {
         if (!surface.equals("grass_block") && !surface.equals("moss_block")) {
             return null;
         }
         double n = Noise.hash(seed + 7, x, z);
         Style st = style(x, z);
-        double flowers = 0.5 + 0.5 * detail.at(x / 30.0, z / 30.0);
         if (st == Style.GORGE) {
-            return n < 0.12 ? "fern" : (n < 0.16 ? "large_fern" : null);
+            return n < 0.16 ? "fern" : null;
         }
         if (h > TREE_LINE + 10) {
             return n < 0.05 ? "short_grass" : null;
         }
-        if (n < 0.16) {
-            return "short_grass";
+        if (slope >= 0.9 && h <= TREE_LINE + 10) {
+            return n < 0.3 ? "bush" : (n < 0.55 ? "short_grass" : (n < 0.65 ? "fern" : null));
         }
-        if (n < 0.16 + 0.07 * flowers) {
-            String[] f = {"cornflower", "oxeye_daisy", "dandelion", "azure_bluet", "allium", "poppy", "blue_orchid"};
-            return f[(int) (Noise.hash(seed + 8, x, z) * f.length)];
+        // Blumenwiesen in Flecken: je Fleck eine Hauptblume (Farbfelder wie auf einer echten Alm), dazu ein paar andere
+        double patch = Noise.smooth(0.05, 0.55, detail.fbm(x / 41.0 + 13, z / 41.0 - 5, 3));
+        if (n < 0.02 + 0.42 * patch) {
+            String[] f = {"cornflower", "oxeye_daisy", "dandelion", "azure_bluet", "allium", "poppy", "blue_orchid",
+                "pink_tulip", "white_tulip", "orange_tulip", "lily_of_the_valley"};
+            int main = (int) ((0.5 + 0.5 * hills.at(x / 33.0 - 70, z / 33.0 + 40)) * f.length * 0.999);
+            double pick = Noise.hash(seed + 8, x, z);
+            if (pick > 0.9) {
+                // Blütenteppiche
+                String[] dirs = {"north", "east", "south", "west"};
+                String carpet = main % 2 == 0 ? "wildflowers" : "pink_petals";
+                return carpet + "[flower_amount=" + (2 + (int) (pick * 31) % 3) + ",facing=" + dirs[(int) (pick * 97) % 4] + "]";
+            }
+            return pick < 0.68 ? f[Math.min(f.length - 1, main)] : f[(int) (pick * 977) % f.length];
+        }
+        if (n < 0.62) {
+            return n < 0.5 ? null : "short_grass";
         }
         return n > 0.985 ? "fern" : null;
     }

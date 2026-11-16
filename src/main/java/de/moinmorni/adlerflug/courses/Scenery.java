@@ -23,6 +23,12 @@ public final class Scenery {
     public static final String[] SECTION_GLASS = {"yellow_stained_glass", "orange_stained_glass",
         "red_stained_glass", "magenta_stained_glass"};
     public static final String[] SECTION_COLOURS = {"#ffd23f", "#ff8a3d", "#ff4d5e", "#d65fd8"};
+    /** Band je Abschnitt: helle und satte Farbe (oben → unten). */
+    static final String[][] SECTION_PAIRS = {{"yellow_concrete", "orange_concrete"}, {"orange_concrete",
+        "red_concrete"}, {"red_concrete", "magenta_concrete"}, {"magenta_concrete", "purple_concrete"}};
+    /** Leuchtender Saum je Abschnitt. */
+    static final String[] SECTION_LIGHTS = {"ochre_froglight[axis=y]", "shroomlight", "redstone_lamp[lit=true]",
+        "pearlescent_froglight[axis=y]"};
     public static final String BOOST_BLOCK = "light_blue_concrete";
     public static final String BOOST_COLOUR = "#5ad1ff";
     public static final String FINISH_COLOUR = "#ffffff";
@@ -34,53 +40,96 @@ public final class Scenery {
     // Ringe
     // =========================================================================================
 
-    /** Ein Block eines Rings (für das Einfärben pro Spieler). */
-    public record RingBlock(int x, int y, int z, String block) {
+    /**
+     * Ein Teil eines Rings als Block-Anzeige: ein gestreckter Quader mit Mitte {@code at} (relativ zur Ring-Mitte),
+     * Längsachse {@code along}, Querachse {@code out} (vom Ring nach außen) und {@code depth} (Flugrichtung), Maße
+     * {@code length} × {@code thick} × {@code deep}.
+     */
+    public record RingPart(String block, Vec at, Vec along, Vec out, Vec depth, double length, double thick, double deep) {
     }
 
-    /** Blöcke eines Rings: Rahmen in der Abschnittsfarbe, Leuchtsteine rundherum, beim Ziel schwarz-weiß-gold. */
-    public static List<RingBlock> ringBlocks(Ring r) {
-        List<RingBlock> out = new ArrayList<>();
+    /** Wie viele Teile ein Band rund wirken lassen (Abweichung vom Kreis höchstens ein paar Hundertstel). */
+    private static int segments(double radius, double minimum) {
+        return (int) Math.max(minimum, Math.ceil(2 * Math.PI * radius / 0.95));
+    }
+
+    /**
+     * Teile eines Rings: ein rundes Band in der Farbe des Abschnitts (oben heller, unten satter), innen ein feiner
+     * Goldrand, außen ein leuchtender Saum und kleine Leuchtsteine rundherum. Schub-Ringe himmelblau, das Ziel
+     * schwarz-weiß kariert mit Gold. Ohne Bukkit (Anzeigen erzeugt {@code world.RingDisplays}).
+     */
+    public static List<RingPart> ringParts(Ring r) {
+        List<RingPart> out = new ArrayList<>();
         Vec n = r.normal();
-        Vec c = r.center();
-        // zwei Richtungen in der Ring-Ebene: „waagerecht“ und „oben“
         Vec u = Math.abs(n.y()) > 0.95 ? new Vec(1, 0, 0) : Vec.UP.cross(n).normalize();
         Vec v = n.cross(u).normalize();
-        double inner = r.radius() + 0.55;
-        double outer = r.radius() + 1.55;
-        int reach = (int) Math.ceil(outer) + 1;
-        int studs = r.radius() >= 5 ? 12 : 8;
-        for (int x = (int) Math.floor(c.x()) - reach; x <= (int) Math.floor(c.x()) + reach; x++) {
-            for (int y = (int) Math.floor(c.y()) - reach; y <= (int) Math.floor(c.y()) + reach; y++) {
-                for (int z = (int) Math.floor(c.z()) - reach; z <= (int) Math.floor(c.z()) + reach; z++) {
-                    Vec p = new Vec(x + 0.5, y + 0.5, z + 0.5).sub(c);
-                    double plane = p.dot(n);
-                    if (Math.abs(plane) > 0.62) {
-                        continue;
-                    }
-                    double a = p.dot(u);
-                    double b = p.dot(v);
-                    double radial = Math.hypot(a, b);
-                    if (radial < inner || radial > outer) {
-                        continue;
-                    }
-                    double angle = Math.atan2(b, a);
-                    double step = 2 * Math.PI / studs;
-                    boolean stud = Math.abs(Math.IEEEremainder(angle, step)) < 0.5 / radial;
-                    out.add(new RingBlock(x, y, z, ringBlock(r, angle, stud)));
-                }
-            }
+        boolean finish = r.kind() == Ring.Kind.FINISH;
+        double rad = r.radius();
+        // Band
+        double bandR = rad + 0.95;
+        double bandThick = finish ? 0.75 : 0.6;
+        double bandDeep = finish ? 0.9 : 0.7;
+        int bandN = segments(bandR, 40);
+        band(out, u, v, n, bandR, bandThick, bandDeep, bandN, k -> bandBlock(r, k, bandN));
+        // innen Gold, außen ein heller Saum
+        int trimN = segments(rad + 0.5, 32);
+        band(out, u, v, n, rad + 0.55, 0.16, bandDeep + 0.14, trimN, k -> finish ? "gold_block" : innerTrim(r));
+        band(out, u, v, n, bandR + bandThick / 2 + 0.08, 0.14, bandDeep * 0.6, trimN, k -> outerTrim(r));
+        // Leuchtsteine
+        int studs = finish ? 16 : (rad >= 5 ? 12 : 8);
+        double size = finish ? 0.5 : 0.42;
+        for (int k = 0; k < studs; k++) {
+            double a = 2 * Math.PI * k / studs + Math.PI / studs;
+            Vec radial = u.mul(Math.cos(a)).add(v.mul(Math.sin(a)));
+            Vec tangent = u.mul(-Math.sin(a)).add(v.mul(Math.cos(a)));
+            out.add(new RingPart(stud(r), radial.mul(bandR), tangent, radial, n, size, size, bandDeep + 0.24));
         }
         return out;
     }
 
-    private static String ringBlock(Ring r, double angle, boolean stud) {
+    private static void band(List<RingPart> out, Vec u, Vec v, Vec n, double radius, double thick, double deep, int count,
+                             java.util.function.IntFunction<String> block) {
+        // Länge an der Außenkante gemessen, damit zwischen den Teilen keine Spalten bleiben
+        double length = 2 * (radius + thick / 2) * Math.tan(Math.PI / count) * 1.04;
+        for (int k = 0; k < count; k++) {
+            double a = 2 * Math.PI * k / count;
+            Vec radial = u.mul(Math.cos(a)).add(v.mul(Math.sin(a)));
+            Vec tangent = u.mul(-Math.sin(a)).add(v.mul(Math.cos(a)));
+            out.add(new RingPart(block.apply(k), radial.mul(radius), tangent, radial, n, length, thick, deep));
+        }
+    }
+
+    /** Band: oben die helle Farbe des Abschnitts, unten die satte – mit weichem Übergang (gestreut). */
+    private static String bandBlock(Ring r, int k, int count) {
+        if (r.kind() == Ring.Kind.FINISH) {
+            return (k / Math.max(1, count / 16)) % 2 == 0 ? "white_concrete" : "black_concrete";
+        }
+        String[] pair = r.kind() == Ring.Kind.BOOST ? new String[] {"light_blue_concrete", "cyan_concrete"}
+                : SECTION_PAIRS[Math.min(SECTION_PAIRS.length - 1, r.section())];
+        double up = Math.sin(2 * Math.PI * k / count); // +1 oben, −1 unten
+        double mix = (up + 1) / 2;
+        // Ordnung statt Zufall, damit sich das Muster nicht bei jedem Start ändert
+        double dither = ((k * 7) % 5) / 5.0 * 0.5 + 0.25;
+        return mix > dither ? pair[0] : pair[1];
+    }
+
+    private static String innerTrim(Ring r) {
+        return r.kind() == Ring.Kind.BOOST ? "diamond_block" : "gold_block";
+    }
+
+    private static String outerTrim(Ring r) {
         return switch (r.kind()) {
-            case FINISH -> stud ? "gold_block"
-                    : (Math.floorMod((int) Math.floor((angle + Math.PI) / (Math.PI / 8)), 2) == 0 ? "white_concrete"
-                    : "black_concrete");
-            case BOOST -> stud ? "sea_lantern" : BOOST_BLOCK;
-            case NORMAL -> stud ? "glowstone" : SECTION_BLOCKS[Math.min(SECTION_BLOCKS.length - 1, r.section())];
+            case FINISH -> "gold_block";
+            case BOOST -> "sea_lantern";
+            case NORMAL -> SECTION_LIGHTS[Math.min(SECTION_LIGHTS.length - 1, r.section())];
+        };
+    }
+
+    private static String stud(Ring r) {
+        return switch (r.kind()) {
+            case FINISH -> "sea_lantern";
+            case BOOST -> "sea_lantern";
+            case NORMAL -> "pearlescent_froglight[axis=y]";
         };
     }
 
@@ -91,15 +140,6 @@ public final class Scenery {
             case BOOST -> BOOST_COLOUR;
             case NORMAL -> SECTION_COLOURS[Math.min(SECTION_COLOURS.length - 1, r.section())];
         };
-    }
-
-    /** Alle Ringe einer Strecke in den Plan (über allem anderen). */
-    public static void rings(Plan plan, Course c) {
-        for (Ring r : c.rings) {
-            for (RingBlock b : ringBlocks(r)) {
-                plan.set(b.x(), b.y(), b.z(), Blk.of(b.block()));
-            }
-        }
     }
 
     // =========================================================================================

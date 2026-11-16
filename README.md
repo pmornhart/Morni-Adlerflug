@@ -13,8 +13,9 @@ ganz allein.
 2. Man steht auf der **Schanze** des Startturms. Loslaufen – an der Kante startet die Zeit, die Flügel gehen von selbst
    auf und es gibt Schwung.
 3. Mit der Maus lenken: nach unten = schneller, nach oben = steigen (kostet Tempo). Der Reihe nach durch alle **Ringe**
-   fliegen – die Farbe zeigt den Abschnitt (gelb → orange → rot → magenta), geschaffte Ringe leuchten grün, am nächsten
-   Ring funkelt es. Die Aktionsleiste zeigt Zeit, Ring, Tempo und einen Pfeil zum nächsten Ring.
+   fliegen – runde, leuchtende Ringe mit Goldrand, die Farbe zeigt den Abschnitt (gelb → orange → rot → magenta).
+   Um den nächsten Ring kreist ein Funkenkranz (auch hinter Bergen und von weit weg zu sehen), geschaffte Ringe
+   verschwinden mit einem Funkenregen. Die Aktionsleiste zeigt Zeit, Ring, Tempo und einen Pfeil zum nächsten Ring.
 4. **Aufwind-Säulen** (aufsteigende Wirbel über einem Steinkreis mit Lagerfeuern) heben an, **Schub-Ringe** (hellblau)
    geben Schwung nach vorn. Raketen gibt es nicht.
 5. Ring verpasst, gelandet, ins Wasser gefallen oder zu weit weg? Dann geht es **automatisch zurück zum letzten Ring**

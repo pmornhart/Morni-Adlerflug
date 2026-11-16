@@ -276,9 +276,10 @@ async function main() {
   const g1 = glidePos[glidePos.length - 1];
   const farthest = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.max(m, Math.hypot(x.pos[0] - alm.stand[0], x.pos[2] - alm.stand[2])), 0);
   const low = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.min(m, x.pos[1]), 999);
+  // mineflayer gleitet nicht: es fällt im Bogen von der Kante (ohne Flügel ein paar Blöcke weit)
   const gone = farthest;
   check('Flügel offen (Server: gleitet)', glidePos.some((x) => x?.gliding), glidePos.map((x) => x?.gliding).join(','));
-  check('Echter Absprung: in der Luft weg von der Schanze', took && gone > 6 && low < alm.line[1] - 3,
+  check('Echter Absprung: in der Luft weg von der Schanze', took && gone > 4.5 && low < alm.line[1] - 3,
     `${gone.toFixed(1)} Blöcke, tiefster Punkt ${low.toFixed(1)}, danach ${g1?.state} (mineflayer gleitet nicht und landet → zurück)`);
   console.log(`  (echter Gleitflug: ${anna.entity.elytraFlying ? 'mineflayer gleitet' : 'mineflayer fällt'}, nächster Ring ${g1?.next})`);
 

@@ -42,7 +42,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class Construction implements Listener {
 
     /** Bau-Version: erhöhen, wenn sich Landschaft, Basislager oder Strecken ändern – dann entsteht die Welt neu. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
+    /** Bis hierhin überträgt der Server die Ring-Anzeigen (Blöcke). */
+    private static final int DISPLAY_RANGE = 320;
     private static final String STAMP = "welt.yml";
 
     private final JavaPlugin plugin;
@@ -146,6 +148,17 @@ public final class Construction implements Listener {
     }
 
     private org.bukkit.World create() {
+        // Die Ringe sind Block-Anzeigen: sie sollen weit zu sehen sein (Standard: 128 Blöcke). Nur für diese Welt und
+        // nur im Speicher – Spigot liest den Wert beim Anlegen der Welt.
+        try {
+            var cfg = Bukkit.spigot().getSpigotConfig();
+            String key = "world-settings." + name + ".entity-tracking-range.display";
+            if (!cfg.contains(key)) {
+                cfg.set(key, DISPLAY_RANGE);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            // ohne Spigot-Einstellungen eben mit dem Standard
+        }
         WorldCreator wc = new WorldCreator(name).generator(generator)
                 .environment(org.bukkit.World.Environment.NORMAL).generateStructures(false);
         org.bukkit.World w = Bukkit.createWorld(wc);
