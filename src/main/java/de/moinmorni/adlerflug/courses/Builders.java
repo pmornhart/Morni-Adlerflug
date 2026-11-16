@@ -421,6 +421,9 @@ final class Builders {
                 walked += 0.4;
                 slice(p, t, center, side, tube);
                 if (walked - lastFrameAt >= 7 && t.height(center.x(), center.z()) > center.y() + tube + 1) {
+                    if (!inside) {
+                        portal(p, center, side, dir, tube);
+                    }
                     lastFrameAt = walked;
                     inside = true;
                     frame(p, center, side, tube, (int) Math.floor(center.y() - tube));
@@ -464,6 +467,32 @@ final class Builders {
                 p.set(x, floor, z, "gravel");
                 p.set(x, floor + 1, z, Blk.deco("rail"));
             }
+        }
+    }
+
+    /** Mundloch: kräftiger Holzrahmen am Eingang des Stollens mit Dach, Laternen und Schild. */
+    private static void portal(Plan p, Vec center, Vec side, Vec dir, double tube) {
+        int floor = (int) Math.floor(center.y() - tube);
+        int roof = (int) Math.floor(center.y() + tube + 0.5);
+        for (double back = -2; back <= 0; back += 0.5) {
+            Vec c = center.add(new Vec(dir.x(), 0, dir.z()).normalize().mul(back));
+            for (int s : new int[] {-1, 1}) {
+                for (double w = 0; w <= 1; w += 0.5) {
+                    Vec q = c.add(side.mul(s * (tube + 0.6 + w)));
+                    for (int y = floor; y <= roof; y++) {
+                        p.set((int) Math.floor(q.x()), y, (int) Math.floor(q.z()), "stripped_spruce_log[axis=y]");
+                    }
+                }
+            }
+            for (double w = -tube - 1.6; w <= tube + 1.6; w += 0.5) {
+                Vec q = c.add(side.mul(w));
+                p.set((int) Math.floor(q.x()), roof, (int) Math.floor(q.z()), "spruce_planks");
+                p.set((int) Math.floor(q.x()), roof + 1, (int) Math.floor(q.z()), "dark_oak_slab[type=bottom]");
+            }
+        }
+        for (int s : new int[] {-1, 1}) {
+            Vec q = center.add(side.mul(s * (tube - 1.2)));
+            p.set((int) Math.floor(q.x()), roof - 1, (int) Math.floor(q.z()), "lantern[hanging=true]");
         }
     }
 
@@ -519,27 +548,44 @@ final class Builders {
         w.trees().block((int) l.x() - 24, (int) l.z() - 8, (int) l.x() - 6, (int) l.z() + 8);
     }
 
+    /** Gipfelkreuz: zwei Blöcke starke Balken aus dunkler Eiche, goldene Strahlen, Sockel mit Gipfelbuch-Kasten. */
     private static void summitCross(Plan p, int x, int y, int z) {
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                p.set(x + dx, y - 1, z + dz, "cobblestone");
-                p.set(x + dx, y, z + dz, dx == 0 && dz == 0 ? "cobblestone" : "cobblestone_slab[type=bottom]");
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int k = -3; k <= 0; k++) {
+                    p.set(x + dx, y + k, z + dz, Math.abs(dx) == 2 || Math.abs(dz) == 2 ? "cobblestone" : "stone_bricks");
+                }
+                if (Math.abs(dx) + Math.abs(dz) <= 2) {
+                    p.set(x + dx, y + 1, z + dz, "cobblestone_slab[type=bottom]");
+                }
             }
         }
-        for (int k = 1; k <= 14; k++) {
-            p.set(x, y + k, z, "dark_oak_log[axis=y]");
-        }
-        for (int k = -4; k <= 4; k++) {
-            if (k != 0) {
-                p.set(x + k, y + 10, z, "dark_oak_log[axis=x]");
+        int h = 22;
+        int bar = 15;
+        for (int k = 1; k <= h; k++) {
+            for (int d = 0; d <= 1; d++) {
+                p.set(x + d, y + k, z, "dark_oak_log[axis=y]");
             }
         }
-        p.set(x, y + 15, z, "lightning_rod[facing=up]");
-        p.set(x - 5, y + 10, z, "gold_block");
-        p.set(x + 5, y + 10, z, "gold_block");
-        p.set(x, y + 10, z + 1, "gold_block");
-        p.set(x, y + 10, z - 1, "gold_block");
-        p.set(x + 1, y + 1, z + 1, "lantern");
+        for (int k = -7; k <= 8; k++) {
+            for (int d = 0; d <= 1; d++) {
+                if (k < 0 || k > 1) {
+                    p.set(x + k, y + bar + d, z, "dark_oak_log[axis=x]");
+                }
+            }
+        }
+        // goldene Strahlen in der Mitte und an den Enden
+        for (int[] g : new int[][] {{-8, bar}, {9, bar}, {-8, bar + 1}, {9, bar + 1}, {0, h + 1}, {1, h + 1}}) {
+            p.set(x + g[0], y + g[1], z, "gold_block");
+        }
+        p.set(x, y + bar, z + 1, "gold_block");
+        p.set(x + 1, y + bar + 1, z + 1, "gold_block");
+        p.set(x, y + bar + 1, z - 1, "gold_block");
+        p.set(x + 1, y + bar, z - 1, "gold_block");
+        p.set(x, y + h + 2, z, "lightning_rod[facing=up]");
+        // Gipfelbuch-Kasten
+        p.set(x - 1, y + 2, z + 1, "spruce_trapdoor[facing=north,half=bottom,open=false]");
+        p.set(x + 2, y + 2, z + 1, "lantern");
     }
 
     private static void spire(Plan p, Terrain t, int x, int z, int r, int top, SplittableRandom rnd) {

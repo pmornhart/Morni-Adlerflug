@@ -246,9 +246,9 @@ public final class Texts {
 
         // ---------- Tafeln ----------
         t("board.hello", "<gradient:#f4a259:#ffe8b0><bold>Adlerhorst</bold></gradient>\n<gray>Wähle eine Strecke am "
-                + "Wegweiser oder mit der Flugkarte.\nOben auf dem Turm: Freiflug-Schanze!</gray>",
+                + "Wegweiser oder mit der Flugkarte.</gray>\n<gray>Oben auf dem Turm: Freiflug-Schanze!</gray>",
                 "<gradient:#f4a259:#ffe8b0><bold>Eagle's Nest</bold></gradient>\n<gray>Pick a course at a signpost or "
-                        + "with the flight map.\nUp the tower: free-flight ramp!</gray>");
+                        + "with the flight map.</gray>\n<gray>Up the tower: free-flight ramp!</gray>");
         t("board.jump", "<aqua><bold>Freiflug-Schanze</bold></aqua>\n<gray>Ohne Zeit – einfach losfliegen!</gray>",
                 "<aqua><bold>Free-flight ramp</bold></aqua>\n<gray>No timer – just fly!</gray>");
         t("board.click", "<yellow>» Schild anklicken zum Losfliegen «</yellow>", "<yellow>» Click the sign to fly «</yellow>");

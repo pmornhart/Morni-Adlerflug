@@ -249,7 +249,7 @@ public final class Designs {
                 .landing(604.5, 152, -770.5, 90)
                 .build(4);
         return new Design(c, t -> {
-            t.shape(new Terrain.Mound(640, -600, 120, 282, 1.6, 20));
+            t.shape(new Terrain.Mound(640, -600, 150, 306, 1.45, 22));
             t.shape(new Terrain.Mound(500, -494, 28, 246, 1.4, 4));
             t.region(new Terrain.Region(640, -600, 150, Terrain.Style.ROCK));
         }, Design.cut(8, 8, 1.8), Builders::gipfel, "white_concrete", null);

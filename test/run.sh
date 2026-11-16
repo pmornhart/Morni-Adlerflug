@@ -106,7 +106,7 @@ if [ "${KEEP:-0}" != "1" ]; then
 fi
 
 for _ in $(seq 1 300); do
-  if grep -q "Adlerflug ist bereit" console.log; then break; fi
+  if grep -q "Adlerflug ist bereit" console.log && grep -q "RCON running" console.log; then break; fi
   if ! kill -0 "$PID" 2>/dev/null; then echo "Server ist abgestürzt:"; tail -40 console.log; exit 1; fi
   sleep 1
 done

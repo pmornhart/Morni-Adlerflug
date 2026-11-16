@@ -229,6 +229,12 @@ async function main() {
 
   // ---------- Station anklicken → Schanze ----------
   const st = stationen.find((x) => x.course === 'almrundflug');
+  // vor das Schild stellen (Reichweite), zur Mitte des Platzes hin versetzt
+  const toMid = Math.hypot(st.x, st.z);
+  const sx = st.x + 0.5 - (st.x / toMid) * 2.5;
+  const sz = st.z + 0.5 - (st.z / toMid) * 2.5;
+  await cmd(`execute in minecraft:adlerflug run tp Anna ${sx.toFixed(2)} 151 ${sz.toFixed(2)}`);
+  await sleep(1200);
   const sign = anna.blockAt(new (require('vec3'))(st.x, st.y, st.z));
   check('Schild an der Station', sign && /sign/.test(sign.name), sign?.name);
   await anna.lookAt(sign.position.offset(0.5, 0.5, 0.5), true);
@@ -259,7 +265,7 @@ async function main() {
   const g1 = glidePos[glidePos.length - 1];
   const gone = g0 && g1 ? Math.hypot(g1.pos[0] - alm.line[0], g1.pos[2] - alm.line[2]) : 0;
   check('Flügel offen (Server: gleitet)', glidePos.some((x) => x?.gliding), glidePos.map((x) => x?.gliding).join(','));
-  check('Echter Gleitflug mit mineflayer (weg von der Schanze)', gone > 12,
+  check('Echter Gleitflug mit mineflayer (weg von der Schanze)', took && g1?.state === 'FLYING' && gone > 12,
     `${gone.toFixed(1)} Blöcke, Höhe ${g1?.pos[1].toFixed(1)}, Ring ${g1?.next}`);
   console.log(`  (echter Gleitflug: ${anna.entity.elytraFlying ? 'mineflayer gleitet' : 'mineflayer fällt'}, nächster Ring ${g1?.next})`);
 
@@ -327,17 +333,20 @@ async function main() {
   r = await guidedFlight(anna, 'almrundflug', 'bis 4', 40000);
   await sleep(400);
   s = await status();
+  const r4 = alm.rings[3];
   const r5 = alm.rings[4];
-  // auf den Boden unter Ring 5 setzen (Physik an: steht dort)
+  // auf den Boden zwischen Ring 4 und 5 setzen (Physik an: steht dort)
   anna.physicsEnabled = true;
-  await cmd(`execute in minecraft:adlerflug positioned ${r5.c[0].toFixed(1)} ${(r5.c[1] - 8).toFixed(1)} ${r5.c[2].toFixed(1)} run tp Anna ~ ~ ~`);
+  const mx = ((r4.c[0] + r5.c[0]) / 2).toFixed(1);
+  const mz = ((r4.c[2] + r5.c[2]) / 2).toFixed(1);
+  await cmd(`execute in minecraft:adlerflug positioned ${mx} ${r5.c[1].toFixed(1)} ${mz} positioned over motion_blocking_no_leaves run tp Anna ~ ~ ~`);
   clear(anna);
   const landed = await waitFor(() => sees(anna, /Gelandet|Ins Wasser|Zu weit/), 6000, 200);
   check('Gelandet → zurück zum letzten Ring', landed && sees(anna, /Gelandet/), anna.chats.slice(-2).join(' | '));
   anna.physicsEnabled = false;
   await sleep(500);
   s = await status();
-  await cmd(`tp Anna ${(s.Anna.pos[0] + 70).toFixed(1)} ${s.Anna.pos[1].toFixed(1)} ${s.Anna.pos[2].toFixed(1)}`);
+  await cmd('execute as Anna at Anna run tp Anna ~ ~ ~70');
   clear(anna);
   const far = await waitFor(() => sees(anna, /Zu weit/), 4000, 200);
   check('Zu weit von der Strecke → zurück', far, anna.chats.slice(-2).join(' | '));

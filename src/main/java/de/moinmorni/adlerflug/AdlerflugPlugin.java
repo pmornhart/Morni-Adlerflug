@@ -551,12 +551,19 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         state();
     }
 
-    /** Aufwind sichtbar machen: helle Wirbel steigen in jeder Säule auf (für alle in der Nähe). */
+    /**
+     * Aufwind sichtbar machen: helle Wirbel steigen in jeder Säule auf (für alle in der Nähe). Beim Freiflug gehen die
+     * Flügel von selbst auf, sobald man fällt.
+     */
     private void ambient() {
         ThreadLocalRandom r = ThreadLocalRandom.current();
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (!p.getWorld().equals(world())) {
                 continue;
+            }
+            if (settings.freeFlight && settings.autoGlide && !flights.flying(p.getUniqueId()) && !p.isGliding()
+                    && !p.isOnGround() && !p.isInWater() && p.getFallDistance() > 2.5f) {
+                p.setGliding(true);
             }
             Location at = p.getLocation();
             for (Updraft u : model.updrafts()) {
