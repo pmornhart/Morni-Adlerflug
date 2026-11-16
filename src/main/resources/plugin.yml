@@ -1,0 +1,22 @@
+name: MorniAdlerflug
+version: '${project.version}'
+main: de.moinmorni.adlerflug.AdlerflugPlugin
+api-version: '1.21'
+description: Mit Flügeln durch Ringe in den Bergen – Flugzeit, Medaillen, Strecke der Woche (MoinMorni).
+authors: [MoinMorni]
+website: https://moinmorni.net
+# Läuft im MoinMorni-Netzwerk (Sprache, Party, Statistik) und auch ganz allein.
+softdepend: [MoinMorni]
+commands:
+  adlerflug:
+    description: Adlerflug – Strecke wählen, Bestenliste, Statistik, Übungsmodus
+    usage: /adlerflug [start|top|stats|woche|uebung|geist|verstecken|ring|neustart|aufgeben|basislager|mitmachen|lobby]
+    aliases: [adler, flug, eagle]
+  adleradmin:
+    description: Adlerflug verwalten und testen (Zustand, Test-Autopilot, Zeiten löschen, Neubau)
+    usage: /adleradmin [status|fliege|strecke|reset|neubau|pruefen]
+    permission: adlerflug.admin
+permissions:
+  adlerflug.admin:
+    description: Zeiten löschen, Welt neu bauen, Test-Autopilot, im Kreativmodus bauen
+    default: op
