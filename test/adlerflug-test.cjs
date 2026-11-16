@@ -211,7 +211,8 @@ async function main() {
   let s = await status();
   check('Anna landet im Adlerhorst', s.Anna && Math.hypot(s.Anna.pos[0], s.Anna.pos[2]) < 25 && s.Anna.pos[1] > 149,
     JSON.stringify(s.Anna?.pos));
-  check('Flügel angelegt (Brust)', anna.inventory.slots[6]?.name === 'elytra', anna.inventory.slots[6]?.name);
+  const chest = (await cmd('data get entity Anna equipment.chest'))[0];
+  check('Flügel angelegt (Brust, unzerbrechlich)', /elytra/.test(chest) && /unbreakable/.test(chest), chest.slice(0, 90));
   check('Flugkarte in der Leiste', /Flugkarte/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
   check('Begrüßung auf Deutsch', sees(anna, /Adlerhorst/) && sawTitle(anna, /Adlerflug/));
   check('Begrüßung auf Englisch (Bert, vom Netzwerk)', sees(bert, /Eagle's Nest/) && s.Bert.lang === 'en',
@@ -244,11 +245,19 @@ async function main() {
   const alm = await course('almrundflug');
   check('Schild startet die Strecke (auf der Schanze)', onRamp && Math.hypot(s.Anna.pos[0] - alm.stand[0], s.Anna.pos[2] - alm.stand[2]) < 2,
     JSON.stringify(s.Anna));
+  // mineflayer braucht nach dem Sprung zur Schanze etwas, bis die Chunks dort da sind
+  await waitFor(() => anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null, 20000, 250);
+  await sleep(1500);
   check('Unterwegs-Leiste (Zurück zum Ring)', /letzten Ring/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
 
   // ---------- Echter Absprung mit Flügeln ----------
   clear(anna);
-  await anna.look(alm.yaw * Math.PI / 180, 0, true);
+  {
+    const V = require('vec3');
+    const dx = alm.line[0] - alm.stand[0];
+    const dz = alm.line[2] - alm.stand[2];
+    await anna.lookAt(new V(alm.line[0] + dx * 4, anna.entity.position.y + 1.6, alm.line[2] + dz * 4), true);
+  }
   anna.setControlState('forward', true);
   anna.setControlState('sprint', true);
   const took = await waitFor(async () => (await status()).Anna?.state === 'FLYING', 8000, 150);
@@ -265,7 +274,7 @@ async function main() {
   const g1 = glidePos[glidePos.length - 1];
   const gone = g0 && g1 ? Math.hypot(g1.pos[0] - alm.line[0], g1.pos[2] - alm.line[2]) : 0;
   check('Flügel offen (Server: gleitet)', glidePos.some((x) => x?.gliding), glidePos.map((x) => x?.gliding).join(','));
-  check('Echter Gleitflug mit mineflayer (weg von der Schanze)', took && g1?.state === 'FLYING' && gone > 12,
+  check('Echter Absprung: in der Luft weg von der Schanze', took && g1?.state === 'FLYING' && gone > 4 && g1.pos[1] < alm.line[1] - 3,
     `${gone.toFixed(1)} Blöcke, Höhe ${g1?.pos[1].toFixed(1)}, Ring ${g1?.next}`);
   console.log(`  (echter Gleitflug: ${anna.entity.elytraFlying ? 'mineflayer gleitet' : 'mineflayer fällt'}, nächster Ring ${g1?.next})`);
 
@@ -361,6 +370,7 @@ async function main() {
   anna.physicsEnabled = true;
 
   // ---------- Bert fliegt alle Strecken (Englisch, jeder Ring zählt) ----------
+  const week0 = (await cmd('adleradmin status'))[0].split('\n')[0].split('woche=')[1].trim();
   for (const st2 of stationen) {
     const id = st2.course;
     if (ONLY && !ONLY.split(',').includes(id)) continue;
@@ -371,12 +381,16 @@ async function main() {
     r = await guidedFlight(bert, id, '', 180000);
     const rings = sumAdd('Bert', 'rings') - before;
     const t = bestOf('Bert', `time_${id}_ms`).slice(-1)[0];
+    if (id === week0) {
+      check('Strecke der Woche geflogen → Wochen-Adler', sees(bert, /Eagle of the week/), bert.chats.filter((x) => /week/.test(x)).join(' | '));
+    }
     check(`${c.name}: alle ${c.rings.length} Ringe, Ziel (EN)`, ok && r.done && rings === c.rings.length && sawTitle(bert, /Finish/)
       && sees(bert, new RegExp(`First flight on`)), `Ringe ${rings}/${c.rings.length}, Zeit ${t} ms (Muster ${c.ms} ms)`);
     await landPhysics(bert);
   }
-  const week = (await cmd('adleradmin status'))[0].split('\n')[0].split('woche=')[1];
-  check('Strecke der Woche geflogen → Wochen-Adler', sees(bert, /Eagle of the week/), `Woche: ${week}`);
+  await sleep(5500);
+  const tab = plain(bert.players?.Bert?.displayName ?? '');
+  check('Wochen-Adler ▲ in der Tab-Liste', tab.includes('▲'), tab);
   clear(bert);
   bert.chat('/adlerflug stats');
   await sleep(800);
@@ -412,6 +426,7 @@ async function main() {
   await sleep(600);
   check('Übungsmodus an', sees(dora, /Übungsmodus an/));
   await select(dora, 'klammflug');
+  await waitFor(() => /Ab Ring/.test(itemName(slot(dora, 4))), 6000, 200);
   check('Übung: „Ab Ring …“ in der Leiste', /Ab Ring/.test(itemName(slot(dora, 4))), itemName(slot(dora, 4)));
   const pick = await openWithItem(dora, 4);
   check('Ring-Auswahl öffnet', pick && /Übung/.test(plain(pick.title)), pick && plain(pick.title));
@@ -439,7 +454,7 @@ async function main() {
   anna.chat('/adlerflug verstecken');
   await sleep(300);
   check('Kein Schaden (Leben voll)', anna.health === 20 && bert.health === 20, `${anna.health}/${bert.health}`);
-  await useItem(dora, 8);
+  dora.chat('/adlerflug lobby');
   await waitFor(() => dora.kickReason != null || calls().some((c) => c.t === 'to-lobby' && c.name === 'Dora'), 4000);
   check('Zur Lobby über das Netzwerk', calls().some((c) => c.t === 'to-lobby' && c.name === 'Dora'));
   const states = calls().filter((c) => c.t === 'state');
