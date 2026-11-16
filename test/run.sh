@@ -14,6 +14,8 @@
 #                  damit nichts heruntergeladen werden muss) – optional
 #   ADLER_NODE_MODULES  node_modules mit mineflayer
 #   EXTRA_PLUGINS  weitere Jars für den Server (z. B. ViaVersion + ViaBackwards für einen echten 26.3-Client)
+#   XMS, XMX, JAVA_OPTS  Speicher und Java-Optionen des Servers (auf einem knappen Rechner z. B. XMS=256M XMX=1536M
+#                  JAVA_OPTS=-XX:+UseSerialGC)
 #
 # Verfasst mit Claude 🤖
 set -euo pipefail
@@ -91,7 +93,7 @@ done
 echo "== Server starten (Port $PORT, RCON $RCON_PORT)"
 cd "$SERVER"
 : > console.log
-$NICE "$JAVA" -Xms1G -Xmx${XMX:-2G} -jar paper.jar --nogui < /dev/null > console.log 2>&1 &
+$NICE "$JAVA" -Xms${XMS:-1G} -Xmx${XMX:-2G} ${JAVA_OPTS:-} -jar paper.jar --nogui < /dev/null > console.log 2>&1 &
 PID=$!
 echo "$PID" > "$SERVER/.pid"
 stop_server() {

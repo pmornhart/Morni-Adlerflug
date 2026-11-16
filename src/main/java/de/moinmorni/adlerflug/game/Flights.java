@@ -394,6 +394,8 @@ public final class Flights {
             if (!p.getWorld().equals(pl.world())) {
                 it.remove();
                 reportEnd(p, e.getValue());
+                setPlaying(p, e.getValue(), false);
+                pl.tint().end(p);
                 continue;
             }
             update(p, e.getValue());

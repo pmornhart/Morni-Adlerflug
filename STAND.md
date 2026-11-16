@@ -2,16 +2,19 @@
 
 **Was es ist:** Der Flug-Modus des MoinMorni-Netzwerks (Paper-Plugin `MorniAdlerflug`, Java 25, Paper 26.x): mit
 Flügeln von einer Schanze abheben und auf Zeit durch eine Strecke aus Ringen in den Bergen fliegen – Zwischenzeiten an
-jedem Ring, Bestzeiten, Medaillen (Bronze, Silber, Gold, Adler), Bestenlisten, Strecke der Woche, Geist der eigenen
-Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`) und ganz allein.
+jedem Ring, Bestzeiten, Medaillen (Bronze, Silber, Gold, Adler, Steinadler), Bestenlisten, Strecke der Woche, Strecke
+des Tages, Geist der eigenen Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`) und ganz
+allein.
 
 ## Aufbau
 
-- `flight/` (ohne Bukkit): `Glide` (Vanilla-Gleitflug Tick für Tick), `Ring`, `RingCheck`, `Updraft`, `FlightSim`, `Vec`.
+- `flight/` (ohne Bukkit): `Glide` (Vanilla-Gleitflug Tick für Tick), `Ring` (bewegt, Takt-Tor, Bonus), `RingCheck`,
+  `Motion`, `Gate`, `Wind`, `Updraft`, `Air` (alles in der Luft, Wind in Böen), `FlightSim`, `Vec`.
 - `course/` (ohne Bukkit): `CourseBuilder` (Wegpunkte → Musterflug → Ringe), `Course`, `Pilots` (Prüf-Pilot),
   `Medal`, `Difficulty`, `Plan`, `Blk`, `Box`.
 - `land/` (ohne Bukkit): `Terrain` (Berge, Formen, Seen, Bach, Oberflächen), `Corridor` (Flugschneise), `Trees`, `Noise`.
-- `courses/`: `Designs` (sechs Strecken), `Builders` + `Scenery` (Bauten), `Basecamp` (Adlerhorst), `World`.
+- `courses/`: `Designs` (acht Strecken), `Daily` (Strecke des Tages), `Builders`, `Rocks` + `Scenery` (Bauten),
+  `Basecamp` (Adlerhorst), `World`.
 - `world/`: `FlightGenerator` (Chunks aus dem Modell), `Construction` (`VERSION`, Neubau), `Holograms`, `Critters`.
 - `game/`: `Flights` (Ablauf, Ringe, Zurücksetzen, Ziel, Rennen, Test-Autopilot), `Flight`, `Race`, `RingTint`,
   `Hotbar`, `Controls`, `Menus`, `Boards`, `Guard`. `stats/`, `time/`, `data/Store`, `net/`, `ui/`, `cmd/`.
@@ -19,6 +22,39 @@ Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`
 
 ## Stand (16.11.2026)
 
+- **Version 0.2.0 – deutlich schwerer, mehr im Flug, Strecke des Tages** (Philip: „deutlich schwerer und immer ein
+  bisschen Abwechslung reinbringen“; Branch `claude/schwerer`, wartet auf Philips Go). Begonnen von einem Helfer, der
+  mittendrin gestoppt wurde (Modell: Strecken, Ringe, Piloten, Tagesstrecke), fertig gebaut und geprüft von seinem
+  Nachfolger. Alles in `docs/releases/v0.2.0.md`:
+  - zwei neue Strecken Felsenlabyrinth (schwer, 14 Ringe: Slalom um Felsnadeln, zwei Felsbögen, Spalte, knapp über den
+    See) und Höllenschlund (extrem, 17: tiefer Pass, Fallwind, Tor im Takt, dunkle Höhle, Haarnadeln, knapp übers
+    Wasser); die sechs alten kleiner und schärfer (Ringe 3,2–4,5), Stollen in der Mitte dunkel.
+  - bewegte Ringe (gleiten/kreisen, `Motion`), Tore im Takt (`Gate`, Flügel als Block-Anzeigen, durch kommt nur, wer
+    durch die Lücke fliegt), Bonus-Ringe mit Zeit-Gutschrift, Windzonen und Wind des Tages in Böen alle 10 Ticks
+    (`Air.GUST`: der Server setzt nur dann die Geschwindigkeit – jeden Tick ginge bei Verzögerung im Netz Steuerung
+    verloren), Schlieren und Windsäcke. Alles nach der Flugzeit (`Flight.ringTime`, nach dem Zurücksetzen auf den Stand
+    des Musterflugs), genau gleich im nachgebauten Gleitflug, im Prüf-Piloten und auf dem Server. Je Flieger eigene
+    Anzeigen der bewegten Ringe/Tore (`RingTint`: Träger mit Teilen als Mitfahrer, `RETAIN_PASSENGERS`), für Zuschauer
+    eine gemeinsame nach der Server-Uhr.
+  - Medaillen strenger (Adler 0,98 × Musterflug, Gold 1,06, Silber 1,15, Bronze 1,30), neu ✦ Steinadler = bester
+    geübter Prüf-Pilot (`Pilots.experts`: Kurven anschneiden, tiefer anfliegen, Bonus-Ringe), mit Landschaft geprüft.
+  - Strecke des Tages (`Daily`, Tal im Süden, Starttürme an beiden Enden): Richtung, Wind (8 Richtungen, 4 Stärken),
+    Tageszeit, Wetter, Ringgröße, bewegte Ringe, Tor, Bonus-Ringe nur aus dem Datum; lässt sie sich so nicht fliegen,
+    wird – ebenfalls nur aus dem Datum – etwas weggenommen. Gerechnet nach dem Start im Hintergrund (~0,5 s) und um
+    Mitternacht neu; Tages-Bestenliste, Station mit ✦, Uhr in der Leiste, `/adlerflug tag`, Tafeln/Menü/Begrüßung mit
+    den Bedingungen, Tageszeit und Wetter nur für den Flieger.
+  - Treppe zur Freiflug-Schanze (Philips Bild): Die Stufen stiegen nach Norden an, man lief gegen die hohe Kante und
+    musste jede Stufe springen. Jetzt zwei Läufe nach Süden mit Absatz, dunkle Wangen mit Geländer, Antrittspfosten und
+    Laternen, Stützen; Begrüßungstafel vor die Treppe gerückt.
+  - Schnittstelle Fassung 2 (byte-gleich): `playing` vom Absprung bis Ziel/Aufgeben, „Zurück ins Dorf“ und
+    `/adlerflug lobby` → `askToLobby`, `LinkageError` → einmal Hinweis, dann wie bisher; Test-Netzwerk schreibt
+    `playing`/`ask-lobby`/`hold-slot`.
+  - Alte Bestzeiten auf geänderten Strecken zählen nicht mehr (Fingerabdruck `Course.signature` je Bestzeit, Zähler
+    bleiben). `Construction.VERSION` 3. Neue config: `strecke-des-tages`. Neue Statistik: `bonus_rings`,
+    `golden_eagles`, `days`, `finishes_tagesflug`; Strecken `felsenlabyrinth`, `hoellenschlund`.
+  - Geprüft: 75 Unit-Tests (JUnit 6.1.3; neu u. a. Bonus-Flug ohne Anstoßen, Steinadler erreichbar, Tore/Bewegung/Böen,
+    Treppe ohne Springen begehbar, Strecke des Tages zwei Wochen am Stück fliegbar, Vielfalt über 120 Tage), Paper 26.1
+    übersetzt. ECHTZAHL
 - Version 0.1.0 (Branch `claude/erster-stand`, noch nicht veröffentlicht – wartet auf Philips Go).
 - Sechs Strecken: Almrundflug (leicht, 12 Ringe), Klammflug (mittel, 11), Burgruine (mittel, 11), Gletscherspalte
   (schwer, 12), Stollenflug (schwer, 11), Gipfelkreuz (extrem, 19). Welt entsteht beim Erzeugen der Chunks aus dem

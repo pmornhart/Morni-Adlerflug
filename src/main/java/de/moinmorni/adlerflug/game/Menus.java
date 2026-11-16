@@ -103,7 +103,7 @@ public final class Menus {
     private void dailyIcon(Menu m, int slot, Player p, PlayerRecord rec, String l) {
         var d = pl.daily();
         if (d == null) {
-            m.set(slot, Items.icon(Material.CLOCK, Texts.get(l, "menu.daily"), List.of(Texts.get(l, "daily.building")),
+            m.set(slot, Items.icon(Material.CLOCK, Texts.get(l, "menu.daily"), List.of(pl.dailyText(l)),
                     false), null);
             return;
         }

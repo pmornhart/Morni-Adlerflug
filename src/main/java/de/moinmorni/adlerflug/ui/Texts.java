@@ -326,6 +326,8 @@ public final class Texts {
         t("daily.head", "<#c084fc>Strecke des Tages</#c084fc> <conditions>", "<#c084fc>Course of the day</#c084fc> <conditions>");
         t("daily.building", "<gray>Die Strecke des Tages wird gerade gebaut …</gray>",
                 "<gray>The course of the day is being built …</gray>");
+        t("daily.off", "<gray>Die Strecke des Tages ist auf diesem Server aus.</gray>",
+                "<gray>The course of the day is switched off on this server.</gray>");
         t("daily.new", "<gray>Ein neuer Tag – die Strecke des Tages hat sich geändert. Schau sie dir an!</gray>",
                 "<gray>A new day – the course of the day has changed. Have a look!</gray>");
         t("daily.over", "<white><time></white> <gray>– inzwischen gilt schon die Strecke von heute, darum zählt die Zeit "

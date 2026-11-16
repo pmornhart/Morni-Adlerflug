@@ -206,7 +206,7 @@ public final class FlightCommand implements TabExecutor {
     private void day(CommandSender sender, String l, Player p, boolean start) {
         var d = pl.daily();
         if (d == null) {
-            sender.sendMessage(Texts.chat(l, "daily.building"));
+            sender.sendMessage(Texts.chat(l, "daily.head", Texts.comp("conditions", pl.dailyText(l))));
             return;
         }
         if (start && p != null) {

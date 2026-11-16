@@ -84,6 +84,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         public int raceWait = 15;
         public boolean ghostDefault = true;
         public boolean freeFlight = true;
+        public boolean daily = true;
     }
 
     private static final String NO_COLLISION = "adler_nocoll";
@@ -128,6 +129,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         settings.raceWait = Math.max(5, getConfig().getInt("rennen-wartezeit", 15));
         settings.ghostDefault = getConfig().getBoolean("geist-standard", true);
         settings.freeFlight = getConfig().getBoolean("freiflug", true);
+        settings.daily = getConfig().getBoolean("strecke-des-tages", true);
         Items.init(this);
 
         long t = System.currentTimeMillis();
@@ -135,13 +137,18 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         getLogger().info("Modell gebaut: " + model.courses().size() + " Strecken in " + (System.currentTimeMillis() - t)
                 + " ms.");
         for (Course c : model.courses()) {
-            FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), Pilots.aim(c), model::solid,
-                    8000);
-            if (!r.finished()) {
-                getLogger().warning("Strecke " + c.id + " ist für den Prüf-Piloten nicht fliegbar: " + r.problem());
-            }
             windSpots(c);
         }
+        // Gegenprobe im Hintergrund (nur zur Warnung im Protokoll – die Tests prüfen dasselbe vor jedem Release)
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            for (Course c : model.courses()) {
+                FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), Pilots.aim(c),
+                        model::solid, 8000);
+                if (!r.finished()) {
+                    getLogger().warning("Strecke " + c.id + " ist für den Prüf-Piloten nicht fliegbar: " + r.problem());
+                }
+            }
+        });
         worlds = new Construction(this, model, settings.world);
         try {
             worlds.setup();
@@ -334,6 +341,9 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
 
     /** Neuer Tag? Dann die Strecke des Tages im Hintergrund neu rechnen (dauert etwa eine Sekunde). */
     private void rollDay() {
+        if (!settings.daily) {
+            return;
+        }
         LocalDate day = today();
         String id = day.toString();
         Daily.Today d = daily;
@@ -405,7 +415,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
     public Component dailyText(String l) {
         Daily.Today d = daily;
         if (d == null) {
-            return Texts.get(l, "daily.building");
+            return Texts.get(l, settings.daily ? "daily.building" : "daily.off");
         }
         Daily.Conditions k = d.conditions();
         Course c = d.course();

@@ -105,6 +105,7 @@ public final class World {
         }
         w.designs = List.copyOf(done);
         w.courses = w.designs.stream().map(Design::course).toList();
+        w.heights.clear();
         return w;
     }
 
@@ -165,7 +166,9 @@ public final class World {
                     continue;
                 }
             }
-            return new Daily.Today(cur, CourseBuilder.medals(course, this::solid));
+            Daily.Today today = new Daily.Today(cur, CourseBuilder.medals(course, this::solid));
+            heights.clear();
+            return today;
         }
         throw new IllegalStateException("Strecke des Tages " + c.id() + " lässt sich nicht bauen");
     }

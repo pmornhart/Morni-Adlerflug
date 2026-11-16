@@ -54,6 +54,8 @@ public final class RingTint implements Listener {
     private static final int HALO_POINTS = 40;
     /** Über so viele Ticks gleitet ein bewegter Ring bzw. ein Flügel zur nächsten Stellung (weich statt ruckig). */
     private static final int GLIDE_TICKS = 2;
+    /** Eigene Anzeige eines Rings höchstens so oft neu erzeugen (Ticks), falls sie verschwunden ist. */
+    private static final long REBUILD_TICKS = 40;
 
     /** Ein Ring einer Strecke: Teile und die gemeinsame Anzeige (für alle, die ihn nicht gerade selbst fliegen). */
     static final class Spec {
@@ -85,8 +87,13 @@ public final class RingTint implements Listener {
         Entity carrier;
         final List<BlockDisplay> wings = new ArrayList<>();
 
-        boolean valid() {
-            return !parts.isEmpty() && parts.get(0).isValid() && (carrier == null || carrier.isValid());
+        /**
+         * Gibt es die Anzeigen noch? Nicht {@code isValid()}: in einem Chunk, der geladen ist, dessen Wesen der Server
+         * aber (noch) nicht verfolgt, ist ein frisch erzeugtes Wesen „nicht gültig“ – würde man dann neu erzeugen, kämen
+         * jeden Tick über hundert Anzeigen dazu. Weg sind sie erst, wenn der Chunk sie beim Entladen verwirft.
+         */
+        boolean alive() {
+            return !parts.isEmpty() && !parts.get(0).isDead() && (carrier == null || !carrier.isDead());
         }
 
         List<Entity> all() {
@@ -110,6 +117,8 @@ public final class RingTint implements Listener {
     private static final class Own {
         final String course;
         final Map<String, Shown> copies = new HashMap<>();
+        /** Wann eine eigene Anzeige zuletzt erzeugt wurde (Server-Tick) – höchstens alle {@link #REBUILD_TICKS}. */
+        final Map<String, Long> built = new HashMap<>();
 
         Own(String course) {
             this.course = course;
@@ -230,7 +239,7 @@ public final class RingTint implements Listener {
 
     /** Gemeinsame Anzeige erzeugen (falls nicht schon da). */
     private void spawn(Spec s) {
-        if (s.shared.valid()) {
+        if (s.shared.alive()) {
             return;
         }
         s.shared.remove();
@@ -352,7 +361,7 @@ public final class RingTint implements Listener {
     private void animateShared() {
         long t = clock.getAsLong();
         for (Spec s : specs.values()) {
-            if (s.ring.dynamic() && s.shared.valid()) {
+            if (s.ring.dynamic() && s.shared.alive()) {
                 pose(s, s.shared, t);
             }
         }
@@ -371,7 +380,7 @@ public final class RingTint implements Listener {
             float ext = ext(r);
             for (int i = 0; i < wings.size() && i < shown.wings.size(); i++) {
                 BlockDisplay d = shown.wings.get(i);
-                if (d.isValid()) {
+                if (!d.isDead()) {
                     d.setInterpolationDelay(0);
                     d.setInterpolationDuration(GLIDE_TICKS);
                     d.setTransformation(transform(wings.get(i), ext));
@@ -411,13 +420,16 @@ public final class RingTint implements Listener {
                 continue;
             }
             Shown mine = o.copies.get(k);
-            if (mine == null || !mine.valid()) {
+            if (mine == null || !mine.alive()) {
                 if (mine != null) {
                     mine.remove();
                 }
-                if (!loaded(r.center())) {
+                Long last = o.built.get(k);
+                long now = clock.getAsLong();
+                if (!loaded(r.center()) || (last != null && now - last < REBUILD_TICKS)) {
                     continue;
                 }
+                o.built.put(k, now);
                 mine = new Shown();
                 build(s, mine, p, time);
                 o.copies.put(k, mine);
@@ -437,7 +449,7 @@ public final class RingTint implements Listener {
         for (Spec s : specs.values()) {
             if (s.course.equals(o.course) && s.ring.dynamic() && !mine.contains(s.key)) {
                 s.shared.all().forEach(d -> {
-                    if (d.isValid()) {
+                    if (!d.isDead()) {
                         p.showEntity(plugin, d);
                     }
                 });
@@ -481,7 +493,7 @@ public final class RingTint implements Listener {
         }
         passed.computeIfAbsent(p.getUniqueId(), k -> new HashSet<>()).add(s.key);
         s.shared.all().forEach(d -> {
-            if (d.isValid()) {
+            if (!d.isDead()) {
                 p.hideEntity(plugin, d);
             }
         });
@@ -542,7 +554,7 @@ public final class RingTint implements Listener {
             boolean ownCopy = o != null && o.course.equals(s.course) && s.ring.dynamic();
             if (!ownCopy) {
                 s.shared.all().forEach(d -> {
-                    if (d.isValid()) {
+                    if (!d.isDead()) {
                         p.showEntity(plugin, d);
                     }
                 });
