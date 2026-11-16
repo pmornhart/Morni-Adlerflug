@@ -26,9 +26,8 @@ Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`
 - Unit-Tests grün (Gleitflug-Physik, Ring-Erkennung auch bei 12 Blöcken/Tick, Aufwind, Medaillen, Bauplan,
   Landschaft/Schneisen, jede Strecke: Musterflug durch alle Ringe ohne Anstoßen, Prüf-Pilot im Ziel, Start und
   Landeplatz, Abstände, Texte inkl. jeder Schlüssel aus dem Quelltext). Übersetzt gegen Paper 26.3 und 26.1.2.
-- Echter Test (`FRESH=1 test/run.sh`, Paper 26.1.2 + Test-Netzwerk, vier Test-Spieler): **61 Prüfungen**, alle grün
-  (zusammen aus den letzten Läufen: 60/61 und danach die eine korrigierte Prüfung grün; die Sandbox beendete den Server
-  zwischendurch mehrmals wegen Speichermangel anderer Prozesse). Geprüft: Adlerhorst, Stationen, Sprache, Flugbuch,
+- Echter Test (`FRESH=1 test/run.sh`, Paper 26.1.2 + Test-Netzwerk, vier Test-Spieler): **61/61** in einem Lauf mit
+  frisch erzeugter Welt (16.11. abends). Geprüft: Adlerhorst, Stationen, Sprache, Flugbuch,
   Absprung mit Flügeln, Zeit und Tempo in der Aktionsleiste, Gelandet/Zu weit/Ring verpasst → zurück, Neustart,
   Aufgeben, Übungsmodus, Rennen, Bestzeit, Medaillen, Bestenliste, Englisch, Netzwerk-Statistik, Strecke der Woche
   mit ▲-Abzeichen; alle sechs Strecken mit dem Test-Autopiloten komplett geflogen, jeder Ring gezählt. Server-Log ohne
@@ -46,6 +45,10 @@ Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`
   weit – Grenze auf 4,5 gesetzt; Lauf 2 mit dieser Grenze grün, dort fehlte bei Gipfelkreuz nur die Ziel-Meldung, weil
   der Test-Spieler auf derselben Welt schon geflogen war – alle 19 Ringe und die Zeit zählten). Bilder v5 mit echtem
   Client 26.3 (Ich-Sicht im Flug auf allen Strecken, Tempo in der Leiste geprüft: 51–87 km/h).
+- Echter Test mit frischer Welt zuverlässig (16.11. abends): Der Test-Spieler blieb vor der Schanzenkante stehen –
+  mineflayer bewegt sich nicht in Chunks, die es noch nicht hat, und bei Almrundflug liegt die Kante schon im nächsten
+  Chunk; auf dem ausgelasteten Rechner kam der zu spät. Jetzt wartet `test/run.sh`, bis die Strecken vorbereitet sind,
+  und der Test auf die Chunks vor der Kante (bis 120 s), 30 s auf den Absprung und kurz auf die Leiste nach dem Ziel.
 - Gefunden und behoben: Tempo (km/h) zeigte immer 0; wer langsam über die Schanzenkante trat, galt sofort als
   gelandet (jetzt kleiner Sprung nach vorn beim Absprung); Test startete, bevor RCON lief (Server wurde gleich wieder beendet); `tp` per RCON ohne
   `execute in` landete in der Oberwelt und blockierte den Server beim Erzeugen.

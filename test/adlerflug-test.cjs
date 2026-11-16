@@ -246,9 +246,19 @@ async function main() {
   const alm = await course('almrundflug');
   check('Schild startet die Strecke (auf der Schanze)', onRamp && Math.hypot(s.Anna.pos[0] - alm.stand[0], s.Anna.pos[2] - alm.stand[2]) < 2,
     JSON.stringify(s.Anna));
-  // mineflayer braucht nach dem Sprung zur Schanze etwas, bis die Chunks dort da sind
-  await waitFor(() => Math.hypot(anna.entity.position.x - alm.stand[0], anna.entity.position.z - alm.stand[2]) < 2
-    && anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null && anna.entity.onGround, 25000, 250);
+  // mineflayer braucht nach dem Sprung zur Schanze etwas, bis die Chunks dort da sind – auch die vor der Kante: in einem
+  // Chunk, den es noch nicht hat, bleibt der Test-Spieler einfach stehen (bei Almrundflug liegt die Kante schon im
+  // nächsten Chunk). In einer frisch erzeugten Welt auf einem ausgelasteten Rechner dauert das auch einmal eine Minute.
+  {
+    const V = require('vec3');
+    const len = Math.hypot(alm.line[0] - alm.stand[0], alm.line[2] - alm.stand[2]) || 1;
+    const ux = (alm.line[0] - alm.stand[0]) / len;
+    const uz = (alm.line[2] - alm.stand[2]) / len;
+    const ahead = [0, 4, 8, 12, 16, 20].map((k) => new V(alm.line[0] + ux * k, alm.line[1] - 2, alm.line[2] + uz * k));
+    await waitFor(() => Math.hypot(anna.entity.position.x - alm.stand[0], anna.entity.position.z - alm.stand[2]) < 2
+      && anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null && anna.entity.onGround
+      && ahead.every((at) => anna.blockAt(at) != null), 120000, 250);
+  }
   await sleep(1500);
   check('Unterwegs-Leiste (Zurück zum Ring)', /letzten Ring/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
 
@@ -262,7 +272,9 @@ async function main() {
   }
   anna.setControlState('forward', true);
   anna.setControlState('sprint', true);
-  const took = await waitFor(async () => (await status()).Anna?.state === 'FLYING', 8000, 150);
+  // Bis zur Kante sind es ein paar Schritte; auf einem ausgelasteten Rechner (Test mit nice) läuft der Test-Spieler
+  // deutlich langsamer als im echten Spiel – darum großzügig warten.
+  const took = await waitFor(async () => (await status()).Anna?.state === 'FLYING', 30000, 150);
   anna.setControlState('forward', false);
   anna.setControlState('sprint', false);
   check('Absprung erkannt – Zeit läuft', took && sawBar(anna, /Los!/), anna.bars.slice(-2).join(' | '));
@@ -315,6 +327,8 @@ async function main() {
   s = await status();
   check('Nach dem Ziel auf dem Landeplatz', s.Anna && Math.hypot(s.Anna.pos[0] - alm.landing[0], s.Anna.pos[2] - alm.landing[2]) < 4,
     JSON.stringify(s.Anna?.pos));
+  // Die Leiste kommt im selben Moment wie der Sprung auf den Landeplatz – unter Last beim Test-Spieler etwas später.
+  await waitFor(() => /Nochmal/.test(itemName(slot(anna, 0))), 5000, 200);
   check('Leiste nach dem Ziel (Nochmal fliegen)', /Nochmal/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
 
   // ---------- Zweiter Flug: sauber → neue Bestzeit, Medaille ----------

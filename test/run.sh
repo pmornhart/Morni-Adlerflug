@@ -111,7 +111,14 @@ for _ in $(seq 1 300); do
   sleep 1
 done
 grep -q "Adlerflug ist bereit" console.log || { echo "Adlerflug wurde nicht bereit:"; tail -40 console.log; exit 1; }
-grep -E "Modell gebaut|Adlerflug-Welt bereit|Adlerflug ist bereit|Netzwerk|nicht fliegbar" console.log || true
+# Die Strecken werden nach dem Start im Hintergrund vorbereitet (in einer frischen Welt erzeugt) – erst danach testen,
+# sonst kommen die Chunks an der Schanze beim Test-Spieler zu spät an.
+for _ in $(seq 1 300); do
+  if grep -q "Strecken vorbereitet" console.log; then break; fi
+  if ! kill -0 "$PID" 2>/dev/null; then echo "Server ist abgestürzt:"; tail -40 console.log; exit 1; fi
+  sleep 1
+done
+grep -E "Modell gebaut|Adlerflug-Welt bereit|Adlerflug ist bereit|Strecken vorbereitet|Netzwerk|nicht fliegbar" console.log || true
 
 if [ "${SKIP_TEST:-0}" = "1" ]; then
   echo "Server läuft (PID $PID) – anhalten mit: node $HERE/rcon.cjs 127.0.0.1:$RCON_PORT $SERVER/.rcon-pass stop"
