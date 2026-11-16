@@ -326,6 +326,7 @@ async function main() {
     `${times.join(' → ')} ms | ${anna.chats.filter((c) => /Bestzeit|Medaille/.test(c)).join(' | ')}`);
   check('Medaille erflogen', sees(anna, /Neue Medaille/) && sumAdd('Anna', 'medals') >= 1, String(sumAdd('Anna', 'medals')));
   check('Zwischenzeiten im Vergleich (grün/rot)', sawBar(anna, /Ring \d+\/12 .*\([+−]/), anna.bars.filter((b) => /Ring/.test(b)).slice(-1)[0]);
+  check('Tempo in der Aktionsleiste', anna.bars.some((b) => /[1-9]\d* km\/h/.test(b)), anna.bars.filter((b) => /km/.test(b)).slice(-1)[0]);
   const yml = readFile(playerFile('Anna'));
   check('Bestzeit in der Spielerdatei', /almrundflug:[\s\S]*best: \d+/.test(yml));
   check('Geist der Bestzeit gespeichert', fs.existsSync(ghostFile('Anna', 'almrundflug')));

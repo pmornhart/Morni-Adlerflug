@@ -26,11 +26,15 @@ Bestzeit, Party-Rennen und Übungsmodus. Läuft im Netzwerk (Kennung `adlerflug`
 - Unit-Tests grün (Gleitflug-Physik, Ring-Erkennung auch bei 12 Blöcken/Tick, Aufwind, Medaillen, Bauplan,
   Landschaft/Schneisen, jede Strecke: Musterflug durch alle Ringe ohne Anstoßen, Prüf-Pilot im Ziel, Start und
   Landeplatz, Abstände, Texte inkl. jeder Schlüssel aus dem Quelltext). Übersetzt gegen Paper 26.3 und 26.1.2.
-- Echter Test (`FRESH=1 test/run.sh`, Paper 26.1.2 + Test-Netzwerk, vier Test-Spieler): zuletzt 52/60 – die acht
-  roten waren Fehler im Testskript (Reichweite zum Schild, Blickrichtung von mineflayer, mineflayer sieht die
-  Rüstungsplätze nicht, Chunks nach dem Sprung zur Schanze noch nicht da), die Abläufe selbst liefen; Skript korrigiert.
-  Alle sechs Strecken mit dem Test-Autopiloten komplett geflogen, jeder Ring gezählt.
-- Gefunden und behoben: Test startete, bevor RCON lief (Server wurde gleich wieder beendet); `tp` per RCON ohne
+- Echter Test (`FRESH=1 test/run.sh`, Paper 26.1.2 + Test-Netzwerk, vier Test-Spieler): **61 Prüfungen**, alle grün
+  (zusammen aus den letzten Läufen: 60/61 und danach die eine korrigierte Prüfung grün; die Sandbox beendete den Server
+  zwischendurch mehrmals wegen Speichermangel anderer Prozesse). Geprüft: Adlerhorst, Stationen, Sprache, Flugbuch,
+  Absprung mit Flügeln, Zeit und Tempo in der Aktionsleiste, Gelandet/Zu weit/Ring verpasst → zurück, Neustart,
+  Aufgeben, Übungsmodus, Rennen, Bestzeit, Medaillen, Bestenliste, Englisch, Netzwerk-Statistik, Strecke der Woche
+  mit ▲-Abzeichen; alle sechs Strecken mit dem Test-Autopiloten komplett geflogen, jeder Ring gezählt. Server-Log ohne
+  Fehler.
+- Gefunden und behoben: Tempo (km/h) zeigte immer 0; wer langsam über die Schanzenkante trat, galt sofort als
+  gelandet (jetzt kleiner Sprung nach vorn beim Absprung); Test startete, bevor RCON lief (Server wurde gleich wieder beendet); `tp` per RCON ohne
   `execute in` landete in der Oberwelt und blockierte den Server beim Erzeugen.
 - Nicht echt geprüft: echter Gleitflug durch Ringe mit einem echten Client (mineflayer gleitet nicht, weil es die
   Flügel im Brustplatz nicht sieht – der Absprung mit Flügeln auf dem Server ist geprüft), Bedrock (Geyser), Aufwind

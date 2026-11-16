@@ -57,6 +57,7 @@ public final class Flights {
     private static final Particle.DustOptions GHOST_WING = new Particle.DustOptions(Color.fromRGB(230, 245, 255), 0.9f);
     /** So viele Ticks am Boden zählen als gelandet. */
     private static final int LANDED_TICKS = 8;
+    private static final double HOP = 0.45;
     /** Nach dem Ziel so lange weitergleiten, dann zum Landeplatz. */
     private static final int AFTER_FINISH = 40;
 
@@ -413,9 +414,10 @@ public final class Flights {
                 }
             }
         }
+        Vec moved = f.hasPrev ? c1.sub(f.prev) : Vec.ZERO;
         f.prev = c1;
         f.hasPrev = true;
-        hud(p, f, c1);
+        hud(p, f, c1, moved);
     }
 
     /** Ein Tick in der Luft; true = der Flug ist für diesen Tick erledigt (zurückgesetzt oder im Ziel). */
@@ -432,6 +434,12 @@ public final class Flights {
             if (f.launch != null && p.isGliding()) {
                 p.setVelocity(new Vector(f.launch.x(), f.launch.y(), f.launch.z()));
                 f.launch = null;
+            } else if (f.launch != null && !f.hopped && f.next == 0 && p.isOnGround()) {
+                f.hopped = true;
+                // Noch auf dem Brett (langsam über die Kante getreten): kleiner Sprung nach vorn, damit die
+                // Flügel in der Luft aufgehen – sonst gilt man gleich als gelandet
+                p.setVelocity(new Vector(f.launch.x() * 0.6, Math.max(f.launch.y(), HOP), f.launch.z() * 0.6));
+                f.glideUntil = Math.max(f.glideUntil, tick + 10);
             }
         }
         Vec v = c1.sub(c0);
@@ -487,6 +495,7 @@ public final class Flights {
         double speed = pl.settings().launch;
         f.launch = speed <= 0 ? null : f.course.start.launch().normalize().mul(speed);
         f.glideUntil = tick + 6;
+        f.hopped = false;
         countFlight(p, f);
         p.sendActionBar(Texts.get(pl.lang(p), "flight.go"));
         p.playSound(p.getLocation(), Sound.ITEM_ELYTRA_FLYING, 0.8f, 1.2f);
@@ -782,7 +791,7 @@ public final class Flights {
     // Anzeige unterwegs
     // =========================================================================================
 
-    private void hud(Player p, Flight f, Vec c1) {
+    private void hud(Player p, Flight f, Vec c1, Vec moved) {
         String l = pl.lang(p);
         Course c = f.course;
         Ring next = f.next < c.ringCount() ? c.rings.get(f.next) : null;
@@ -791,9 +800,6 @@ public final class Flights {
                 p.sendActionBar(f.splitText);
             } else if (f.state == Flight.State.FLYING) {
                 long ms = f.clock.now(tick);
-                Vec v = p.getVelocity() == null ? Vec.ZERO : new Vec(p.getVelocity().getX(), p.getVelocity().getY(),
-                        p.getVelocity().getZ());
-                Vec moved = f.hasPrev ? c1.sub(f.prev) : v;
                 Component bar = Component.text("⏱ ", NamedTextColor.AQUA)
                         .append(Component.text(TimeFormat.clock(ms, l), NamedTextColor.WHITE))
                         .append(Component.text("  ·  ", NamedTextColor.DARK_GRAY))

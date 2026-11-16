@@ -82,7 +82,7 @@ keine Einstellungs-Befehle.
 - `/adlerflug` (auch `/adler`, `/flug`, `/eagle`): Strecken-Menü; `start <strecke>`, `top <strecke>`, `stats [spieler]`,
   `woche`, `uebung`, `geist`, `verstecken`, `ring` (zurück zum letzten Ring), `neustart`, `aufgeben`, `basislager`,
   `mitmachen`, `lobby`, `hilfe`
-- `/adleradmin` (Recht `adlerflug.admin`, nur zum Verwalten und Testen): `status`, `fliege <spieler> [bis <ring>]
+- `/adleradmin` (Recht `adlerflug.admin`, nur zum Verwalten und Testen): `status`, `start <spieler> <strecke>` (auf die Schanze stellen), `fliege <spieler> [bis <ring>]
   [daneben <ring>]` (Test-Autopilot), `strecke <id>` (Daten als JSON), `stationen`, `reset <spieler> [strecke]`,
   `neubau`, `pruefen` (alle Strecken mit dem Prüf-Piloten abfliegen)
 

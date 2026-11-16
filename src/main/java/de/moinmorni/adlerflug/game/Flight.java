@@ -40,6 +40,8 @@ final class Flight {
     long glideUntil;
     /** Geschwindigkeit, die nach dem Aufklappen gesetzt wird (null = keine). */
     Vec launch;
+    /** Schon einmal vom Brett gehüpft (nur beim Absprung, damit langsames Hinaustreten nicht als Landung zählt). */
+    boolean hopped;
     /** Übungsmodus: ab welchem Ring gestartet wurde (0 = Schanze). */
     int fromRing;
     /** Test-Autopilot: aktueller Tick des Musterflugs (−1 = aus), Ring, bis zu dem geflogen wird, Ring zum Verfehlen. */

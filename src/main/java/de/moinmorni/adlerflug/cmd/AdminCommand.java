@@ -28,7 +28,7 @@ import org.bukkit.entity.Player;
  */
 public final class AdminCommand implements TabExecutor {
 
-    private static final List<String> SUBS = List.of("status", "fliege", "strecke", "stationen", "reset", "neubau", "pruefen");
+    private static final List<String> SUBS = List.of("status", "start", "fliege", "strecke", "stationen", "reset", "neubau", "pruefen");
 
     private final AdlerflugPlugin pl;
 
@@ -47,6 +47,16 @@ public final class AdminCommand implements TabExecutor {
         switch (sub) {
             case "status" -> status(sender);
             case "fliege" -> guide(sender, l, args);
+            case "start" -> {
+                Player p = args.length > 2 ? Bukkit.getPlayerExact(args[1]) : null;
+                Optional<Course> c = args.length > 2 ? pl.model().course(args[2]) : Optional.empty();
+                if (p == null || c.isEmpty()) {
+                    sender.sendMessage(Component.text("/adleradmin start <spieler> <strecke>"));
+                } else {
+                    pl.flights().select(p, c.get());
+                    sender.sendMessage(Component.text(p.getName() + " steht auf der Schanze von " + c.get().id + "."));
+                }
+            }
             case "strecke" -> {
                 Optional<Course> c = args.length > 1 ? pl.model().course(args[1]) : Optional.empty();
                 if (c.isEmpty()) {
@@ -195,7 +205,7 @@ public final class AdminCommand implements TabExecutor {
         }
         if (args.length == 1) {
             SUBS.stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).forEach(out::add);
-        } else if (args.length == 2 && List.of("fliege", "reset").contains(args[0].toLowerCase(Locale.ROOT))) {
+        } else if (args.length == 2 && List.of("fliege", "reset", "start").contains(args[0].toLowerCase(Locale.ROOT))) {
             Bukkit.getOnlinePlayers().forEach(p -> out.add(p.getName()));
         } else if (args.length == 2 && "strecke".equalsIgnoreCase(args[0])) {
             pl.model().courses().forEach(c -> out.add(c.id));
