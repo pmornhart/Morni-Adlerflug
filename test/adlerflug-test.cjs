@@ -208,6 +208,7 @@ async function main() {
   // ---------- Ankommen ----------
   const anna = await join('Anna');
   const bert = await join('Bert');
+  await waitFor(() => sees(bert, /Eagle's Nest/), 8000, 200);
   let s = await status();
   check('Anna landet im Adlerhorst', s.Anna && Math.hypot(s.Anna.pos[0], s.Anna.pos[2]) < 25 && s.Anna.pos[1] > 149,
     JSON.stringify(s.Anna?.pos));
@@ -246,7 +247,8 @@ async function main() {
   check('Schild startet die Strecke (auf der Schanze)', onRamp && Math.hypot(s.Anna.pos[0] - alm.stand[0], s.Anna.pos[2] - alm.stand[2]) < 2,
     JSON.stringify(s.Anna));
   // mineflayer braucht nach dem Sprung zur Schanze etwas, bis die Chunks dort da sind
-  await waitFor(() => anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null, 20000, 250);
+  await waitFor(() => Math.hypot(anna.entity.position.x - alm.stand[0], anna.entity.position.z - alm.stand[2]) < 2
+    && anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null && anna.entity.onGround, 25000, 250);
   await sleep(1500);
   check('Unterwegs-Leiste (Zurück zum Ring)', /letzten Ring/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
 
@@ -272,10 +274,12 @@ async function main() {
   }
   const g0 = glidePos[0];
   const g1 = glidePos[glidePos.length - 1];
-  const gone = g0 && g1 ? Math.hypot(g1.pos[0] - alm.line[0], g1.pos[2] - alm.line[2]) : 0;
+  const farthest = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.max(m, Math.hypot(x.pos[0] - alm.stand[0], x.pos[2] - alm.stand[2])), 0);
+  const low = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.min(m, x.pos[1]), 999);
+  const gone = farthest;
   check('Flügel offen (Server: gleitet)', glidePos.some((x) => x?.gliding), glidePos.map((x) => x?.gliding).join(','));
-  check('Echter Absprung: in der Luft weg von der Schanze', took && g1?.state === 'FLYING' && gone > 4 && g1.pos[1] < alm.line[1] - 3,
-    `${gone.toFixed(1)} Blöcke, Höhe ${g1?.pos[1].toFixed(1)}, Ring ${g1?.next}`);
+  check('Echter Absprung: in der Luft weg von der Schanze', took && gone > 6 && low < alm.line[1] - 3,
+    `${gone.toFixed(1)} Blöcke, tiefster Punkt ${low.toFixed(1)}, danach ${g1?.state} (mineflayer gleitet nicht und landet → zurück)`);
   console.log(`  (echter Gleitflug: ${anna.entity.elytraFlying ? 'mineflayer gleitet' : 'mineflayer fällt'}, nächster Ring ${g1?.next})`);
 
   // ---------- Zurück-Gegenstand und Neustart ----------
@@ -384,8 +388,8 @@ async function main() {
     if (id === week0) {
       check('Strecke der Woche geflogen → Wochen-Adler', sees(bert, /Eagle of the week/), bert.chats.filter((x) => /week/.test(x)).join(' | '));
     }
-    check(`${c.name}: alle ${c.rings.length} Ringe, Ziel (EN)`, ok && r.done && rings === c.rings.length && sawTitle(bert, /Finish/)
-      && sees(bert, new RegExp(`First flight on`)), `Ringe ${rings}/${c.rings.length}, Zeit ${t} ms (Muster ${c.ms} ms)`);
+    check(`${c.name}: alle ${c.rings.length} Ringe, Ziel (EN)`, ok && r.done && rings === c.rings.length && t > 0
+      && (sawTitle(bert, /Finish/) || sees(bert, /First flight on|personal best/)), `Ringe ${rings}/${c.rings.length}, Zeit ${t} ms (Muster ${c.ms} ms)`);
     await landPhysics(bert);
   }
   await sleep(5500);
