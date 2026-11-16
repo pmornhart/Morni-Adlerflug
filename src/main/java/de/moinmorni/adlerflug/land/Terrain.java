@@ -242,7 +242,7 @@ public final class Terrain {
             }
         }
         for (Lake l : lakes) {
-            if (ground < l.level() && Math.hypot(x - l.cx(), z - l.cz()) < l.radius() + 6) {
+            if (ground < l.level() && Math.hypot(x - l.cx(), z - l.cz()) < l.radius()) {
                 return l.level();
             }
         }
@@ -287,7 +287,7 @@ public final class Terrain {
         double snowLine = SNOW + detail.at(x / 23.0, z / 23.0) * 9;
         if (st == Style.GLACIER) {
             if (slope >= 2.5) {
-                return n < 0.45 ? "snow_block" : (n < 0.82 ? "packed_ice" : (n < 0.9 ? "blue_ice" : "stone"));
+                return n < 0.62 ? "snow_block" : (n < 0.9 ? "packed_ice" : (n < 0.95 ? "blue_ice" : "stone"));
             }
             return n < 0.06 ? "packed_ice" : "snow_block";
         }

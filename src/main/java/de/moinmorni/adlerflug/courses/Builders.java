@@ -111,20 +111,22 @@ final class Builders {
         if (wall == null) {
             return;
         }
+        // Wasservorhang vor der Felswand: in der Luft direkt vor der Wand, von oben bis zum Bach
         int top = t.height(wall.x() + u.x() * 3, wall.z() + u.z() * 3);
         int bottom = t.height(base.x(), base.z());
+        Vec front = wall.sub(u);
         for (int k = -1; k <= 1; k++) {
-            Vec q = wall.add(new Vec(-u.z(), 0, u.x()).mul(k));
+            Vec q = front.add(new Vec(-u.z(), 0, u.x()).mul(k));
             int x = (int) Math.floor(q.x());
             int z = (int) Math.floor(q.z());
-            int ground = t.height(x, z);
-            for (int y = Math.max(bottom + 1, Math.min(ground, top) - 60); y <= Math.min(ground, top); y++) {
-                p.set(x, y, z, Blk.WATER);
+            for (int y = bottom + 1; y <= top; y++) {
+                if (y > t.height(x, z)) {
+                    p.set(x, y, z, Blk.WATER);
+                }
             }
-            // Becken oben, damit das Wasser eine Quelle hat
-            int bx = (int) Math.floor(q.x() + u.x());
-            int bz = (int) Math.floor(q.z() + u.z());
-            p.set(bx, Math.min(ground, top), bz, Blk.WATER);
+            // Quelle oben in einer Kerbe der Wand
+            Vec in = q.add(u.mul(2));
+            p.set((int) Math.floor(in.x()), top, (int) Math.floor(in.z()), Blk.WATER);
         }
     }
 

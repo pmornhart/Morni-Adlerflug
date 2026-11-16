@@ -164,8 +164,8 @@ public final class Designs {
                 .landing(-74.5, 172, -980.5, 90)
                 .build(4);
         return new Design(c, t -> {
-            t.shape(new Terrain.Mound(0, -700, 360, 214, 2.6, 16));
-            t.shape(new Terrain.Plateau(0, -650, 140, 90, 200, 5));
+            t.shape(new Terrain.Mound(0, -700, 360, 214, 2.6, 10));
+            t.shape(new Terrain.Plateau(0, -650, 140, 90, 200, 2));
             t.shape(new Terrain.Basin(0, -930, 70, 70, 168));
             t.shape(new Terrain.Mound(0, -395, 30, 206, 1.4, 3));
             t.region(new Terrain.Region(0, -700, 330, Terrain.Style.GLACIER));
