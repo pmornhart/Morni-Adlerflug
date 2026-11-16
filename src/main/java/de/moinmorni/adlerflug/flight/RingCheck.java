@@ -3,13 +3,14 @@ package de.moinmorni.adlerflug.flight;
 /**
  * Erkennt, ob ein Flug durch einen Ring ging – aus zwei Positionen nacheinander (vorher, jetzt). Auch bei hoher
  * Geschwindigkeit (mehrere Blöcke pro Tick) fällt nichts durch: gerechnet wird mit der Strecke dazwischen, nicht mit
- * dem Punkt. Ohne Bukkit, mit Unit-Tests.
+ * dem Punkt. Bewegte Ringe und Takt-Tore werden zu dem Bruchteil des Ticks geprüft, in dem die Ebene gekreuzt wurde.
+ * Ohne Bukkit, mit Unit-Tests.
  */
 public final class RingCheck {
 
-    /** Ergebnis: durch (Anteil zwischen den Punkten), knapp daneben (Ebene gekreuzt, außerhalb) oder nichts. */
+    /** Ergebnis: durch, knapp daneben (Ebene gekreuzt, außerhalb), gegen ein geschlossenes Tor, oder nichts. */
     public enum Hit {
-        THROUGH, MISSED, NONE
+        THROUGH, MISSED, CLOSED, NONE
     }
 
     /**
@@ -27,11 +28,17 @@ public final class RingCheck {
     private RingCheck() {
     }
 
+    /** Wie {@link #check(Ring, Vec, Vec, double)} für Ringe, die sich nicht bewegen. */
+    public static Result check(Ring ring, Vec from, Vec to) {
+        return check(ring, from, to, 0);
+    }
+
     /**
      * Prüft die Strecke {@code from} → {@code to} gegen den Ring. Gezählt wird nur in Flugrichtung (von der
-     * Vorderseite zur Rückseite).
+     * Vorderseite zur Rückseite). {@code t0} ist die Flugzeit (Ticks seit dem Absprung) bei {@code from}, {@code to}
+     * liegt einen Tick später.
      */
-    public static Result check(Ring ring, Vec from, Vec to) {
+    public static Result check(Ring ring, Vec from, Vec to, double t0) {
         double a = ring.side(from);
         double b = ring.side(to);
         if (!(a < 0 && b >= 0)) {
@@ -39,9 +46,10 @@ public final class RingCheck {
         }
         double t = a / (a - b);
         Vec at = from.lerp(to, t);
-        double dist = at.distance(ring.center());
+        double when = t0 + t;
+        double dist = at.distance(ring.centerAt(when));
         if (dist <= ring.hitRadius()) {
-            return new Result(Hit.THROUGH, t, dist);
+            return new Result(ring.passes(at, when) ? Hit.THROUGH : Hit.CLOSED, t, dist);
         }
         if (dist <= MISS_RANGE) {
             return new Result(Hit.MISSED, t, dist);

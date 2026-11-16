@@ -45,4 +45,11 @@ public final class TimeFormat {
         String frac = String.format("%03d", rest).replaceAll("0+$", "");
         return base + sep + frac;
     }
+
+    /** Kurze Sekunden mit einer Nachkommastelle: „1,5 s“ bzw. „1.5 s“ (Gutschrift, Takt-Tor). */
+    public static String seconds(long ms, String lang) {
+        long tenths = Math.round(Math.max(0, ms) / 100.0);
+        char sep = "en".equals(lang) ? '.' : ',';
+        return (tenths / 10) + String.valueOf(sep) + (tenths % 10) + " s";
+    }
 }

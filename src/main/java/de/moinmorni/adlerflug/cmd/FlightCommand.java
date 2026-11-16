@@ -20,8 +20,8 @@ import org.bukkit.entity.Player;
 /** {@code /adlerflug} – alles, was die Gegenstände können, auch als Befehl (z. B. für Bedrock oder Tastatur-Fans). */
 public final class FlightCommand implements TabExecutor {
 
-    private static final List<String> SUBS = List.of("start", "top", "stats", "woche", "uebung", "geist", "verstecken",
-            "ring", "neustart", "aufgeben", "basislager", "mitmachen", "lobby", "hilfe");
+    private static final List<String> SUBS = List.of("start", "top", "stats", "woche", "tag", "uebung", "geist",
+            "verstecken", "ring", "neustart", "aufgeben", "basislager", "mitmachen", "lobby", "hilfe");
 
     private final AdlerflugPlugin pl;
 
@@ -57,6 +57,7 @@ public final class FlightCommand implements TabExecutor {
             case "top" -> course(args, 1, sender, l).ifPresent(c -> top(sender, l, c));
             case "stats" -> stats(sender, l, p, args.length > 1 ? args[1] : null);
             case "woche", "week" -> week(sender, l);
+            case "tag", "heute", "day", "today" -> day(sender, l, p, args.length > 1 && "start".equalsIgnoreCase(args[1]));
             case "uebung", "übung", "practice" -> {
                 if (p != null) {
                     pl.flights().togglePractice(p);
@@ -100,11 +101,11 @@ public final class FlightCommand implements TabExecutor {
             }
             case "lobby" -> {
                 if (p != null) {
-                    pl.net().toLobby(p);
+                    pl.net().askToLobby(p);
                 }
             }
             default -> {
-                Optional<Course> c = pl.model().course(sub);
+                Optional<Course> c = pl.course(sub);
                 if (c.isPresent() && p != null) {
                     pl.flights().select(p, c.get());
                 } else {
@@ -116,10 +117,10 @@ public final class FlightCommand implements TabExecutor {
     }
 
     Optional<Course> course(String[] args, int i, CommandSender sender, String l) {
-        Optional<Course> c = args.length > i ? pl.model().course(args[i].toLowerCase(Locale.ROOT)) : Optional.empty();
+        Optional<Course> c = args.length > i ? pl.course(args[i].toLowerCase(Locale.ROOT)) : Optional.empty();
         if (c.isEmpty()) {
             sender.sendMessage(Texts.chat(l, "cmd.course", Texts.arg("list",
-                    String.join(", ", pl.model().courses().stream().map(x -> x.id).toList()))));
+                    String.join(", ", pl.courses().stream().map(x -> x.id).toList()))));
         }
         return c;
     }
@@ -168,7 +169,10 @@ public final class FlightCommand implements TabExecutor {
         if (r.weeklyDone(pl.store().weekId())) {
             sender.sendMessage(Texts.get(l, "stats.badge", Texts.comp("badge", Texts.get(l, "badge"))));
         }
-        for (Course c : pl.model().courses()) {
+        if (r.days > 0) {
+            sender.sendMessage(Texts.get(l, "stats.days", Texts.arg("n", r.days)));
+        }
+        for (Course c : pl.courses()) {
             long best = r.best(c.id);
             if (best > 0) {
                 sender.sendMessage(Texts.get(l, "stats.course", Texts.comp("course", Flights.courseName(c, l)),
@@ -198,13 +202,28 @@ public final class FlightCommand implements TabExecutor {
         }
     }
 
+    /** Strecke des Tages: Bedingungen und Tages-Bestenliste (mit {@code start} gleich losfliegen). */
+    private void day(CommandSender sender, String l, Player p, boolean start) {
+        var d = pl.daily();
+        if (d == null) {
+            sender.sendMessage(Texts.chat(l, "daily.building"));
+            return;
+        }
+        if (start && p != null) {
+            pl.flights().select(p, d.course());
+            return;
+        }
+        sender.sendMessage(Texts.chat(l, "daily.head", Texts.comp("conditions", pl.dailyText(l))));
+        top(sender, l, d.course());
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
             SUBS.stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).forEach(out::add);
         } else if (args.length == 2 && List.of("start", "top").contains(args[0].toLowerCase(Locale.ROOT))) {
-            pl.model().courses().stream().map(c -> c.id).filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT)))
+            pl.courses().stream().map(c -> c.id).filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT)))
                     .forEach(out::add);
         } else if (args.length == 2 && "stats".equalsIgnoreCase(args[0])) {
             Bukkit.getOnlinePlayers().stream().map(Player::getName)

@@ -51,17 +51,26 @@ public final class Store {
     private String weekId = "";
     private String weekCourse = "";
     private boolean ghostDefault = true;
+    /** Strecke des Tages: Kennung und der Tag, für den ihre Bestenliste gilt. */
+    private final String daily;
+    private String dayId = "";
+    /** Fingerabdruck jeder festen Strecke: ändert sich eine Strecke, zählen ihre Bestzeiten neu. */
+    private final Map<String, String> signatures = new HashMap<>();
 
-    public Store(Path dir, Logger log, Collection<Course> courses) {
+    public Store(Path dir, Logger log, Collection<Course> courses, String daily) {
         this.dir = dir;
         this.log = log;
+        this.daily = daily;
         for (Course c : courses) {
             boards.put(c.id, new Leaderboard());
+            signatures.put(c.id, c.signature());
         }
+        boards.put(daily, new Leaderboard());
     }
 
     /** Alle Spieler laden und Bestenlisten aufbauen. */
     public void load() throws IOException {
+        int changed = 0;
         Path players = dir.resolve("spieler");
         Files.createDirectories(players);
         try (var files = Files.list(players)) {
@@ -73,12 +82,48 @@ public final class Store {
                     y.loadFromString(Files.readString(f, StandardCharsets.UTF_8));
                     PlayerRecord r = PlayerRecord.fromMap(uuid, toMap(y));
                     records.put(uuid, r);
+                    if (renew(r)) {
+                        changed++;
+                        save(r);
+                    }
                 } catch (IllegalArgumentException | InvalidConfigurationException e) {
                     log.warning("Spielerdatei " + name + " ist kaputt und wird übersprungen: " + e.getMessage());
                 }
             }
         }
+        if (changed > 0) {
+            log.info("Strecken haben sich geändert – alte Bestzeiten von " + changed + " Spielern zählen dort nicht mehr.");
+        }
         rebuildBoards();
+    }
+
+    /**
+     * Bestzeiten auf Strecken, die sich seitdem geändert haben (anderer Fingerabdruck), zählen nicht mehr: Bestzeit,
+     * Zwischenzeiten und Geist fallen weg, Zähler (Flüge, Ziele) bleiben. true = etwas geändert.
+     */
+    private boolean renew(PlayerRecord r) {
+        boolean any = false;
+        for (Map.Entry<String, PlayerRecord.CourseStats> e : r.courses.entrySet()) {
+            String sig = signatures.get(e.getKey());
+            PlayerRecord.CourseStats st = e.getValue();
+            if (sig == null || sig.equals(st.sig)) {
+                continue;
+            }
+            if (st.best > 0) {
+                st.best = 0;
+                st.bestWhen = 0;
+                st.splits = new java.util.ArrayList<>();
+                deleteGhosts(r.uuid, e.getKey());
+                any = true;
+            }
+            st.sig = sig;
+        }
+        return any;
+    }
+
+    /** Fingerabdruck der Strecke (für neue Bestzeiten), leer für die Strecke des Tages. */
+    public String signature(String course) {
+        return signatures.getOrDefault(course, "");
     }
 
     private void rebuildBoards() {
@@ -86,12 +131,33 @@ public final class Store {
         for (PlayerRecord r : records.values()) {
             r.courses.forEach((id, s) -> {
                 Leaderboard b = boards.get(id);
-                if (b != null && s.best > 0) {
+                boolean today = !id.equals(daily) || r.dayId.equals(dayId);
+                if (b != null && s.best > 0 && today) {
                     b.submit(r.uuid, r.name, s.best, s.bestWhen);
                 }
             });
         }
         rebuildWeekly();
+    }
+
+    /** Tag der Strecke des Tages (neu) setzen: ihre Bestenliste gilt nur für diesen Tag. */
+    public void setDay(String id) {
+        if (id.equals(dayId)) {
+            return;
+        }
+        dayId = id;
+        Leaderboard b = boards.get(daily);
+        b.clear();
+        for (PlayerRecord r : records.values()) {
+            PlayerRecord.CourseStats st = r.courses.get(daily);
+            if (r.dayId.equals(id) && st != null && st.best > 0) {
+                b.submit(r.uuid, r.name, st.best, st.bestWhen);
+            }
+        }
+    }
+
+    public String dayId() {
+        return dayId;
     }
 
     /** Woche (neu) setzen: Wochenbestenliste nur aus Zeiten dieser Woche auf der Strecke der Woche. */
@@ -136,6 +202,9 @@ public final class Store {
             r.name = name;
         }
         r.enterWeek(weekId, weekCourse);
+        if (!dayId.isEmpty()) {
+            r.enterDay(dayId, daily);
+        }
         return r;
     }
 
@@ -174,6 +243,7 @@ public final class Store {
 
     /** Neue Zeit in Liste übernehmen (nach einer neuen Bestzeit). */
     public void submit(PlayerRecord r, String course, long ms, long when) {
+        r.course(course).sig = signature(course);
         Leaderboard b = boards.get(course);
         if (b != null) {
             b.submit(r.uuid, r.name, ms, when);
@@ -187,6 +257,7 @@ public final class Store {
     public void reset(PlayerRecord r, String course) {
         if (course == null) {
             r.courses.clear();
+            r.days = 0;
             r.weekBest = 0;
             r.weekDone = false;
             r.flights = 0;

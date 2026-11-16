@@ -44,6 +44,9 @@ public final class Hotbar {
             inv.setItem(4, Items.make(Items.WEEKLY, Material.NETHER_STAR, l, "item.weekly", "item.weekly.lore",
                     Texts.arg("course", weekly.name(l))));
         }
+        if (pl.daily() != null) {
+            inv.setItem(5, Items.make(Items.DAILY, Material.CLOCK, l, "item.daily", "item.daily.lore"));
+        }
         inv.setItem(7, hide(p));
         inv.setItem(8, Items.make(Items.LOBBY, Material.DARK_OAK_DOOR, l, "item.lobby", null));
         inv.setHeldItemSlot(0);

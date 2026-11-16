@@ -2,9 +2,10 @@
  * Echter Test von Morni Adlerflug mit Test-Spielern (mineflayer) auf Paper 26.1.2 – gestartet von test/run.sh.
  *   node adlerflug-test.cjs <host> <port> <rcon-host:port> <rcon-passwort-datei> <server-ordner>
  *
- * Spieler: Anna (deutsch, Party-Leiterin mit Carl), Bert (englisch, fliegt alle Strecken), Carl (fliegt im Rennen mit),
- * Dora (Übungsmodus, Lobby). Sprache und Party kommen vom Test-Netzwerk (test/fake-network), das auch Statistik,
- * Zustand und „zur Lobby“ in calls.log mitschreibt.
+ * Spieler: Anna (deutsch, Party-Leiterin mit Carl), Bert (englisch, fliegt alle Strecken, die Strecke des Tages und die
+ * Bonus-Ringe), Carl (fliegt im Rennen mit), Dora (Übungsmodus, Tor im Takt, Lobby). Sprache und Party kommen vom
+ * Test-Netzwerk (test/fake-network), das auch Statistik, Zustand, „spielt gerade“ und „zur Lobby“ in calls.log
+ * mitschreibt.
  *
  * Geflogen wird zweimal echt (Absprung von der Schanze mit den Flügeln von mineflayer) und sonst mit dem Test-Autopiloten
  * des Servers (/adleradmin fliege): Er führt den Spieler Tick für Tick den Musterflug entlang – die Ringe erkennt das
@@ -203,7 +204,11 @@ async function landPhysics(bot) {
 async function main() {
   console.log(`== Adlerflug-Test gegen ${HOST}:${PORT}`);
   const stationen = JSON.parse((await cmd('adleradmin stationen'))[0]);
-  check('Sechs Stationen im Adlerhorst', stationen.length === 6, stationen.map((s) => s.course).join(', '));
+  check('Acht Stationen + Strecke des Tages im Adlerhorst', stationen.length === 9 && stationen.some((s) => s.course === 'tagesflug'),
+    stationen.map((s) => s.course).join(', '));
+  const day = JSON.parse((await cmd('adleradmin tag'))[0]);
+  check('Strecke des Tages ist fertig gerechnet', day.ready && /^\d{4}-\d\d-\d\d$/.test(day.day) && day.rings >= 10,
+    JSON.stringify(day));
 
   // ---------- Ankommen ----------
   const anna = await join('Anna');
@@ -225,8 +230,9 @@ async function main() {
   const win = await openWithItem(anna, 0);
   const titles = win ? win.slots.filter(Boolean).map(itemName) : [];
   check('Flugkarte öffnet die Strecken', win && /Strecken/.test(plain(win.title)), win && plain(win.title));
-  check('Alle sechs Strecken im Menü', ['Almrundflug', 'Klammflug', 'Burgruine', 'Gletscherspalte', 'Stollenflug', 'Gipfelkreuz']
-    .every((n) => titles.some((t) => t.includes(n))), titles.join(' / '));
+  check('Alle acht Strecken im Menü', ['Almrundflug', 'Klammflug', 'Burgruine', 'Gletscherspalte', 'Stollenflug',
+    'Felsenlabyrinth', 'Gipfelkreuz', 'Höllenschlund'].every((n) => titles.some((t) => t.includes(n))), titles.join(' / '));
+  check('Strecke des Tages im Menü', titles.some((t) => /Tagesflug/.test(t)), titles.join(' / '));
   await closeWindow(anna);
 
   // ---------- Station anklicken → Schanze ----------
@@ -278,6 +284,8 @@ async function main() {
   anna.setControlState('forward', false);
   anna.setControlState('sprint', false);
   check('Absprung erkannt – Zeit läuft', took && sawBar(anna, /Los!/), anna.bars.slice(-2).join(' | '));
+  check('Netzwerk: Anna fliegt gerade (playing)', await waitFor(() => calls().some((c) => c.t === 'playing' && c.name === 'Anna'
+    && c.playing === true), 3000));
   const glidePos = [];
   for (let i = 0; i < 14; i++) {
     await sleep(200);
@@ -393,6 +401,7 @@ async function main() {
   const week0 = (await cmd('adleradmin status'))[0].split('\n')[0].split('woche=')[1].trim();
   for (const st2 of stationen) {
     const id = st2.course;
+    if (id === 'tagesflug') continue;
     if (ONLY && !ONLY.split(',').includes(id)) continue;
     const c = await course(id);
     clear(bert);
@@ -411,10 +420,84 @@ async function main() {
   await sleep(5500);
   const tab = plain(bert.players?.Bert?.displayName ?? '');
   check('Wochen-Adler ▲ in der Tab-Liste', tab.includes('▲'), tab);
+  check('Netzwerk: nach dem Ziel spielt Bert nicht mehr', (() => {
+    const p = calls().filter((c) => c.t === 'playing' && c.name === 'Bert');
+    return p.length >= 2 && p[p.length - 1].playing === false;
+  })());
+
+  // ---------- Bonus-Ringe: Bert fliegt den Weg über den Bonus-Ring ----------
+  {
+    const id = 'klammflug';
+    const c = await course(id);
+    clear(bert);
+    const before = sumAdd('Bert', 'bonus_rings');
+    await select(bert, id);
+    r = await guidedFlight(bert, id, 'bonus', 180000);
+    const t = bestOf('Bert', `time_${id}_ms`).slice(-1)[0];
+    check('Bonus-Ring eingesammelt (Gutschrift im Flug)', r.done && sawBar(bert, /Bonus!/) && sumAdd('Bert', 'bonus_rings') === before + c.bonus.length,
+      `${sumAdd('Bert', 'bonus_rings') - before}/${c.bonus.length} ${bert.bars.filter((b) => /Bonus/.test(b)).slice(-1)[0]}`);
+    check('Gutschrift im Ziel', sees(bert, /bonus ring\(s\):/), bert.chats.filter((x) => /bonus/.test(x)).join(' | '));
+    await landPhysics(bert);
+  }
+
+  // ---------- Strecke des Tages ----------
+  {
+    const id = 'tagesflug';
+    const c = await course(id);
+    clear(bert);
+    bert.chat('/adlerflug tag');
+    await sleep(800);
+    check('/adlerflug tag zeigt die Bedingungen (Englisch)', sees(bert, /Course of the day/) && sees(bert, /(calm|wind)/),
+      bert.chats.slice(-3).join(' | '));
+    const ok = await select(bert, id);
+    await sleep(1200);
+    const dayTicks = { MORGEN: 23250, MITTAG: 6000, ABEND: 12350, NACHT: 18000 }[day.time];
+    const tod = Math.abs(Number(bert.time?.timeOfDay ?? -1)) % 24000;
+    check('Tageszeit der Strecke des Tages (nur für den Flieger)', ok && Math.abs(tod - dayTicks) < 200, `${tod} statt ${dayTicks} (${day.time})`);
+    if (day.weather === 'REGEN') {
+      check('Regen auf der Strecke des Tages', bert.isRaining === true, String(bert.isRaining));
+    }
+    const before = sumAdd('Bert', 'rings');
+    r = await guidedFlight(bert, id, '', 180000);
+    const rings = sumAdd('Bert', 'rings') - before;
+    check(`Strecke des Tages: alle ${c.rings.length} Ringe, Ziel`, ok && r.done && rings === c.rings.length
+      && sees(bert, /First flight on .* today/), `Ringe ${rings}/${c.rings.length} | ${bert.chats.slice(-4).join(' | ')}`);
+    check('Tage gezählt (days), keine Bestzeit ans Netzwerk', sumAdd('Bert', 'days') === 1 && bestOf('Bert', 'time_tagesflug_ms').length === 0,
+      String(sumAdd('Bert', 'days')));
+    clear(bert);
+    bert.chat('/adlerflug top tagesflug');
+    await sleep(800);
+    check('Tages-Bestenliste', sees(bert, /1\. Bert/), bert.chats.slice(-2).join(' | '));
+    await landPhysics(bert);
+    clear(bert);
+    bert.chat('/adlerflug basislager');
+    await sleep(1500);
+    const tod2 = Math.abs(Number(bert.time?.timeOfDay ?? -1)) % 24000;
+    check('Zurück im Adlerhorst: wieder die Zeit der Welt', Math.abs(tod2 - 5000) < 300, String(tod2));
+    // anderer Tag: neue Strecke, leere Tagesliste
+    await cmd('adleradmin tag 2026-12-24');
+    const changed = await waitFor(async () => JSON.parse((await cmd('adleradmin tag'))[0]).day === '2026-12-24', 30000, 500);
+    delete courses.tagesflug;
+    clear(bert);
+    bert.chat('/adlerflug top tagesflug');
+    await sleep(800);
+    check('Neuer Tag: neue Strecke, Tagesliste leer', changed && !sees(bert, /1\. Bert/), bert.chats.slice(-2).join(' | '));
+    const d2 = JSON.parse((await cmd('adleradmin tag'))[0]);
+    const same = await (async () => {
+      await cmd('adleradmin tag 2026-12-24');
+      return JSON.stringify(JSON.parse((await cmd('adleradmin tag'))[0])) === JSON.stringify(d2);
+    })();
+    check('Gleicher Tag, gleiche Bedingungen', same, JSON.stringify(d2));
+    await cmd('adleradmin tag heute');
+    await waitFor(async () => JSON.parse((await cmd('adleradmin tag'))[0]).day === day.day, 30000, 500);
+  }
+
   clear(bert);
   bert.chat('/adlerflug stats');
   await sleep(800);
-  check('Statistik (Englisch)', sees(bert, /Finished: 6/), bert.chats.slice(-3).join(' | '));
+  const bertFinishes = sumAdd('Bert', 'finishes');
+  check('Statistik (Englisch)', sees(bert, new RegExp(`Finished: ${bertFinishes}`)) && sees(bert, /Course of the day finished on/),
+    `${bertFinishes} | ${bert.chats.slice(-4).join(' | ')}`);
 
   // ---------- Party-Rennen: Anna (Leiterin) + Carl ----------
   const carl = await join('Carl');
@@ -439,8 +522,27 @@ async function main() {
   await landPhysics(anna);
   carl.physicsEnabled = true;
 
-  // ---------- Übungsmodus: Dora ab Ring 5 ----------
+  // ---------- Tor im Takt: Dora kommt zu spät (Flugzeit um einen halben Takt verschoben) ----------
   const dora = await join('Dora');
+  {
+    const id = 'burgruine';
+    const c = await course(id);
+    const gate = c.rings.find((x) => x.gate);
+    clear(dora);
+    await select(dora, id);
+    dora.physicsEnabled = false;
+    await cmd('adleradmin fliege Dora takt 40');
+    const shut = await waitFor(() => sees(dora, /Tor war zu/), 60000, 300);
+    const st3 = (await status()).Dora;
+    check('Tor im Takt zu → zurück zum letzten Ring', shut && st3?.resets >= 1 && st3?.next === gate.i,
+      `${dora.chats.slice(-2).join(' | ')} ${JSON.stringify(st3)}`);
+    clear(dora);
+    r = await guidedFlight(dora, id, '', 90000);
+    check('Im Takt geht das Tor auf → Ziel', r.done && sawTitle(dora, /Ziel/), dora.chats.slice(-3).join(' | '));
+    await landPhysics(dora);
+  }
+
+  // ---------- Übungsmodus: Dora ab Ring 5 ----------
   clear(dora);
   dora.chat('/adlerflug uebung');
   await sleep(600);
@@ -474,9 +576,27 @@ async function main() {
   anna.chat('/adlerflug verstecken');
   await sleep(300);
   check('Kein Schaden (Leben voll)', anna.health === 20 && bert.health === 20, `${anna.health}/${bert.health}`);
+  // Mitten im Flug fragt das Netzwerk vor der Lobby nach (Schnittstelle 2), danach geht es sofort
+  await select(dora, 'almrundflug');
+  dora.physicsEnabled = false;
+  await cmd('adleradmin fliege Dora bis 2');
+  await waitFor(async () => (await status()).Dora?.state === 'FLYING', 10000, 250);
+  clear(dora);
   dora.chat('/adlerflug lobby');
-  await waitFor(() => dora.kickReason != null || calls().some((c) => c.t === 'to-lobby' && c.name === 'Dora'), 4000);
-  check('Zur Lobby über das Netzwerk', calls().some((c) => c.t === 'to-lobby' && c.name === 'Dora'));
+  await waitFor(() => calls().some((c) => c.t === 'ask-lobby' && c.name === 'Dora'), 4000);
+  check('Lobby mitten im Flug: Netzwerk fragt nach', calls().some((c) => c.t === 'ask-lobby' && c.name === 'Dora' && c.asked === true)
+    && dora.kickReason == null, JSON.stringify(calls().filter((c) => c.t === 'ask-lobby').slice(-1)[0]));
+  dora.chat('/adlerflug aufgeben');
+  await sleep(1000);
+  check('Nach dem Aufgeben spielt Dora nicht mehr', (() => {
+    const p = calls().filter((c) => c.t === 'playing' && c.name === 'Dora');
+    return p.length > 0 && p[p.length - 1].playing === false;
+  })());
+  dora.physicsEnabled = true;
+  await useItem(dora, 8); // „Zurück ins Dorf“
+  await waitFor(() => dora.kickReason != null, 4000);
+  check('Zur Lobby über das Netzwerk (Gegenstand → askToLobby, sofort)', calls().some((c) => c.t === 'ask-lobby' && c.name === 'Dora'
+    && c.asked === false) && dora.kickReason != null, dora.kickReason ?? '');
   const states = calls().filter((c) => c.t === 'state');
   check('Zustand mit Spielerzahl', states.some((c) => c.players >= 3), JSON.stringify(states.slice(-1)[0]));
 

@@ -32,6 +32,8 @@ public final class Scenery {
     public static final String BOOST_BLOCK = "light_blue_concrete";
     public static final String BOOST_COLOUR = "#5ad1ff";
     public static final String FINISH_COLOUR = "#ffffff";
+    public static final String BONUS_COLOUR = "#7cff6b";
+    public static final String GATE_COLOUR = "#ffcf33";
 
     private Scenery() {
     }
@@ -46,6 +48,27 @@ public final class Scenery {
      * {@code length} × {@code thick} × {@code deep}.
      */
     public record RingPart(String block, Vec at, Vec along, Vec out, Vec depth, double length, double thick, double deep) {
+    }
+
+    /**
+     * Flügel eines Takt-Tors: zwei Platten (Eisen mit rotem Rand innen), die von links und rechts in den Ring gleiten.
+     * {@code gap} ist der Abstand der Innenkanten von der Ringmitte ({@link Ring#passes}: durch kommt, wer dazwischen
+     * fliegt); bei {@code gap = 0} ist der Ring ganz zu. Lage wie {@link #ringParts} relativ zur Ringmitte.
+     */
+    public static List<RingPart> gateWings(Ring r, double gap) {
+        List<RingPart> out = new ArrayList<>();
+        Vec u = r.across();
+        Vec v = r.up();
+        Vec n = r.normal();
+        double width = r.radius() + 1.6;
+        double height = 2 * (r.radius() + 1.0);
+        double edge = 0.35;
+        for (int s : new int[] {-1, 1}) {
+            Vec at = u.mul(s * (gap + edge + width / 2));
+            out.add(new RingPart("iron_block", at, u, v, n, width, height, 0.22));
+            out.add(new RingPart("redstone_block", u.mul(s * (gap + edge / 2)), u, v, n, edge, height, 0.3));
+        }
+        return out;
     }
 
     /** Wie viele Teile ein Band rund wirken lassen (Abweichung vom Kreis höchstens ein paar Hundertstel). */
@@ -104,8 +127,15 @@ public final class Scenery {
         if (r.kind() == Ring.Kind.FINISH) {
             return (k / Math.max(1, count / 16)) % 2 == 0 ? "white_concrete" : "black_concrete";
         }
-        String[] pair = r.kind() == Ring.Kind.BOOST ? new String[] {"light_blue_concrete", "cyan_concrete"}
-                : SECTION_PAIRS[Math.min(SECTION_PAIRS.length - 1, r.section())];
+        if (r.gate() != null) {
+            // Takt-Tor: schwarz-gelb gestreift wie eine Schranke
+            return (k / Math.max(1, count / 20)) % 2 == 0 ? "yellow_concrete" : "black_concrete";
+        }
+        String[] pair = switch (r.kind()) {
+            case BOOST -> new String[] {"light_blue_concrete", "cyan_concrete"};
+            case BONUS -> new String[] {"lime_concrete", "green_concrete"};
+            default -> SECTION_PAIRS[Math.min(SECTION_PAIRS.length - 1, r.section())];
+        };
         double up = Math.sin(2 * Math.PI * k / count); // +1 oben, −1 unten
         double mix = (up + 1) / 2;
         // Ordnung statt Zufall, damit sich das Muster nicht bei jedem Start ändert
@@ -114,30 +144,48 @@ public final class Scenery {
     }
 
     private static String innerTrim(Ring r) {
-        return r.kind() == Ring.Kind.BOOST ? "diamond_block" : "gold_block";
+        if (r.gate() != null) {
+            return "iron_block";
+        }
+        return switch (r.kind()) {
+            case BOOST -> "diamond_block";
+            case BONUS -> "emerald_block";
+            default -> "gold_block";
+        };
     }
 
     private static String outerTrim(Ring r) {
+        if (r.gate() != null) {
+            return "redstone_lamp[lit=true]";
+        }
         return switch (r.kind()) {
             case FINISH -> "gold_block";
             case BOOST -> "sea_lantern";
+            case BONUS -> "verdant_froglight[axis=y]";
             case NORMAL -> SECTION_LIGHTS[Math.min(SECTION_LIGHTS.length - 1, r.section())];
         };
     }
 
     private static String stud(Ring r) {
+        if (r.gate() != null) {
+            return "redstone_lamp[lit=true]";
+        }
         return switch (r.kind()) {
-            case FINISH -> "sea_lantern";
-            case BOOST -> "sea_lantern";
-            case NORMAL -> "pearlescent_froglight[axis=y]";
+            case FINISH, BOOST -> "sea_lantern";
+            case BONUS -> "glowstone";
+            case NORMAL -> r.motion() != null ? "amethyst_block" : "pearlescent_froglight[axis=y]";
         };
     }
 
     /** Farbe eines Rings für Texte (#rrggbb). */
     public static String ringColour(Ring r) {
+        if (r.gate() != null) {
+            return GATE_COLOUR;
+        }
         return switch (r.kind()) {
             case FINISH -> FINISH_COLOUR;
             case BOOST -> BOOST_COLOUR;
+            case BONUS -> BONUS_COLOUR;
             case NORMAL -> SECTION_COLOURS[Math.min(SECTION_COLOURS.length - 1, r.section())];
         };
     }

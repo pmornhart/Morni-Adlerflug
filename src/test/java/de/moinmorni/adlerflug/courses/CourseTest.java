@@ -23,9 +23,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Jede Strecke ist fliegbar: Der Musterflug geht der Reihe nach durch alle Ringe und stößt nirgends an, ein einfacher
- * Pilot (zielt auf die Ringe, nimmt den Aufwind mit) kommt ins Ziel, Start und Landeplatz stehen richtig, die Strecken
- * kommen sich nicht in die Quere.
+ * Jede Strecke ist fliegbar: Der Musterflug geht der Reihe nach durch alle Ringe (auch bewegte Ringe und Tore im Takt)
+ * und stößt nirgends an, ein einfacher Pilot (zielt auf die Ringe, nimmt den Aufwind mit) kommt ins Ziel, der Flug über
+ * alle Bonus-Ringe klappt, Start und Landeplatz stehen richtig, die Strecken kommen sich nicht in die Quere.
  */
 class CourseTest {
 
@@ -37,8 +37,8 @@ class CourseTest {
     }
 
     @Test
-    void sixCoursesFromEasyToExtreme() {
-        assertEquals(6, world.courses().size());
+    void eightCoursesFromEasyToExtreme() {
+        assertEquals(8, world.courses().size());
         Set<Difficulty> used = EnumSet.noneOf(Difficulty.class);
         Set<String> ids = new HashSet<>();
         for (Course c : world.courses()) {
@@ -47,6 +47,8 @@ class CourseTest {
             assertTrue(c.id.matches("[a-z]+"), "Kennung nur Kleinbuchstaben (Statistik time_<id>_ms): " + c.id);
         }
         assertEquals(EnumSet.allOf(Difficulty.class), used);
+        long hard = world.courses().stream().filter(c -> c.difficulty.ordinal() >= Difficulty.SCHWER.ordinal()).count();
+        assertTrue(hard >= 5, "mindestens fünf schwere und extreme Strecken");
     }
 
     @Test
@@ -56,8 +58,9 @@ class CourseTest {
             int next = 0;
             for (int t = 1; t < path.size() && next < c.ringCount(); t++) {
                 RingCheck.Result r = RingCheck.check(c.rings.get(next), Course.center(path.get(t - 1)),
-                        Course.center(path.get(t)));
+                        Course.center(path.get(t)), t - 1);
                 assertFalse(r.hit() == RingCheck.Hit.MISSED, c.id + ": Musterflug verfehlt Ring " + (next + 1));
+                assertFalse(r.hit() == RingCheck.Hit.CLOSED, c.id + ": Musterflug vor geschlossenem Tor " + (next + 1));
                 if (r.hit() == RingCheck.Hit.THROUGH) {
                     next++;
                 }
@@ -92,10 +95,86 @@ class CourseTest {
     @Test
     void aSimplePilotReachesTheFinish() {
         for (Course c : world.courses()) {
-            FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.rings, c.updrafts, Pilots.aim(c),
-                    world::solid, 8000);
+            FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), Pilots.aim(c), world::solid,
+                    8000);
             assertTrue(r.finished() && Pilots.allRings(r), c.id + ": " + r.problem());
-            assertTrue(r.finishMs() >= c.designMs, c.id + ": Medaillen richten sich nach dem schnellsten Piloten");
+            assertTrue(r.scoreMs() >= c.designMs, c.id + ": Medaillen richten sich nach dem schnellsten Piloten");
+        }
+    }
+
+    @Test
+    void everyBonusRingCanBeCollectedAndStillFinish() {
+        int total = 0;
+        for (Course c : world.courses()) {
+            total += c.bonus.size();
+            if (c.bonus.isEmpty()) {
+                continue;
+            }
+            FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), Pilots.hunter(c), world::solid,
+                    8000);
+            assertTrue(r.finished(), c.id + ": Flug über die Bonus-Ringe: " + r.problem());
+            assertEquals(c.bonus.size(), r.bonusCount(), c.id + ": nicht alle Bonus-Ringe");
+            assertTrue(r.credit() > 0 && r.scoreMs() < r.finishMs(), c.id + ": Gutschrift");
+            for (Ring b : c.bonus) {
+                assertTrue(b.bonus() && b.credit() >= 1000, c.id + ": Bonus-Ring schenkt Zeit");
+                double off = c.pathList().stream().mapToDouble(p -> p.distance(b.center())).min().orElse(0);
+                assertTrue(off > b.radius() + 2, c.id + ": Bonus-Ring liegt abseits der Linie (" + off + ")");
+            }
+            // auch der Autopilot im echten Test fliegt diesen Weg: Bonus-Flug ohne Anstoßen
+            assertNotNull(c.bonusPath, c.id);
+            for (int t = 1; t < c.bonusPathTicks(); t++) {
+                Vec p = c.bonusPathAt(t);
+                assertFalse(world.solid((int) Math.floor(p.x()), (int) Math.floor(p.y() + 0.3), (int) Math.floor(p.z())),
+                        c.id + ": Bonus-Flug stößt bei Tick " + t + " an");
+            }
+        }
+        assertTrue(total >= 7, "Bonus-Ringe auf fast allen Strecken");
+    }
+
+    @Test
+    void moreHappensInTheAir() {
+        int moving = 0;
+        int circling = 0;
+        int gates = 0;
+        int winds = 0;
+        for (Course c : world.courses()) {
+            for (Ring r : c.rings) {
+                moving += r.motion() != null ? 1 : 0;
+                circling += r.motion() != null && r.motion().circles() ? 1 : 0;
+                gates += r.gate() != null ? 1 : 0;
+                assertFalse(r.motion() != null && r.gate() != null, c.id + ": bewegtes Tor wäre unfair");
+            }
+            winds += c.winds.size();
+            if (c.difficulty.ordinal() >= Difficulty.SCHWER.ordinal()) {
+                boolean extra = !c.winds.isEmpty() || c.rings.stream().anyMatch(Ring::dynamic);
+                assertTrue(extra || c.id.equals("stollenflug") || !c.bonus.isEmpty(), c.id + ": etwas Besonderes");
+            }
+        }
+        assertTrue(moving >= 6, "bewegte Ringe: " + moving);
+        assertTrue(circling >= 2, "kreisende Ringe: " + circling);
+        assertTrue(gates >= 4, "Tore im Takt: " + gates);
+        assertTrue(winds >= 4, "Windzonen: " + winds);
+    }
+
+    @Test
+    void medalsAreStrictAndTheGoldenEagleIsReachable() {
+        for (Course c : world.courses()) {
+            Course.Medals m = c.medals;
+            assertTrue(m.bronze() > m.silber() && m.silber() > m.gold() && m.gold() > m.adler()
+                    && m.adler() > m.steinadler() && m.steinadler() > 10_000, c.id + ": Reihenfolge " + m);
+            // Adler etwas schneller als der einfache Pilot bzw. der Musterflug, Gold höchstens 7 % langsamer
+            assertTrue(m.adler() <= Math.ceil(c.designMs * 0.98 / 250.0) * 250, c.id + ": Adler zu leicht");
+            assertTrue(m.gold() <= Math.ceil(c.designMs * 1.07 / 250.0) * 250, c.id + ": Gold zu leicht");
+            // Steinadler: ein geübter Prüf-Pilot schafft ihn ohne Anstoßen
+            boolean reached = false;
+            for (FlightSim.Pilot p : Pilots.experts(c)) {
+                FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), p, world::solid, 8000);
+                if (r.finished() && r.scoreMs() <= m.steinadler()) {
+                    reached = true;
+                    break;
+                }
+            }
+            assertTrue(reached, c.id + ": Steinadler (" + m.steinadler() + ") schafft kein Prüf-Pilot");
         }
     }
 
@@ -127,7 +206,10 @@ class CourseTest {
             for (int i = 0; i < c.ringCount(); i++) {
                 Ring r = c.rings.get(i);
                 assertEquals(i, r.index());
-                assertTrue(r.radius() >= 3.5, c.id + ": Ring " + (i + 1) + " zu klein");
+                assertTrue(r.radius() >= 3.0, c.id + ": Ring " + (i + 1) + " zu klein");
+                if (c.difficulty.ordinal() >= Difficulty.SCHWER.ordinal() && !r.finish()) {
+                    assertTrue(r.radius() <= 4.0, c.id + ": Ring " + (i + 1) + " zu groß für eine schwere Strecke");
+                }
                 assertTrue(r.section() >= 0 && r.section() < 4);
                 if (i > 0) {
                     double d = r.center().distance(c.rings.get(i - 1).center());
@@ -135,7 +217,7 @@ class CourseTest {
                 }
             }
             assertTrue(c.medals.bronze() > c.medals.silber() && c.medals.silber() > c.medals.gold()
-                    && c.medals.gold() > c.medals.adler() && c.medals.adler() > 10_000, c.id + ": Medaillen");
+                    && c.medals.gold() > c.medals.adler() && c.medals.adler() > c.medals.steinadler(), c.id + ": Medaillen");
         }
     }
 
@@ -170,7 +252,8 @@ class CourseTest {
 
     @Test
     void basecampHasAStationPerCourse() {
-        assertEquals(world.courses().size(), world.basecamp().stations().size());
+        assertEquals(world.courses().size() + 1, world.basecamp().stations().size(), "acht Strecken + Strecke des Tages");
+        assertTrue(world.basecamp().stations().stream().anyMatch(s -> s.course().equals(Daily.ID)));
         for (var s : world.basecamp().stations()) {
             assertNotNull(world.plan().get(s.signX(), s.signY(), s.signZ()), s.course());
             assertTrue(world.plan().get(s.signX(), s.signY(), s.signZ()).data().contains("sign"), s.course());
@@ -194,5 +277,41 @@ class CourseTest {
             assertEquals(id.toLowerCase(java.util.Locale.ROOT), id);
         }
         assertTrue(seen.contains("minecraft:glowstone") && seen.contains("minecraft:yellow_concrete"));
+    }
+
+    /**
+     * Treppe zur Freiflug-Schanze: Man läuft sie hinauf, ohne zu springen (jede Stufe ist eine Treppe, die nach Süden
+     * ansteigt, oder ein Absatz), darüber ist Platz für den Kopf, links und rechts ist ein Geländer.
+     */
+    @Test
+    void stairsToTheJumpTowerCanBeWalkedUp() {
+        int feet = Basecamp.Y + 1;
+        int landings = 0;
+        for (int z = 14; z <= 27; z++) {
+            for (int x = -2; x <= 2; x++) {
+                String b = world.blockAt(x, feet, z);
+                if (b.contains("stairs")) {
+                    assertTrue(b.contains("facing=south") && !b.contains("half=top"),
+                            "Stufe bei " + x + "/" + z + " steigt nach Süden an: " + b);
+                } else {
+                    assertTrue(world.solid(x, feet - 1, z) && !world.solid(x, feet, z), "Absatz bei " + x + "/" + z);
+                }
+            }
+            if (world.blockAt(0, feet, z).contains("stairs")) {
+                feet++;
+            } else {
+                landings++;
+            }
+            for (int a = 0; a <= 1; a++) {
+                assertFalse(world.solid(0, feet + a, z), "Kopf frei bei z " + z);
+            }
+            assertTrue(world.blockAt(-3, feet, z).contains("fence"), "Geländer links bei z " + z);
+            assertTrue(world.blockAt(3, feet, z).contains("fence"), "Geländer rechts bei z " + z);
+        }
+        assertTrue(landings >= 2, "Absatz in halber Höhe");
+        assertEquals(Basecamp.Y + 13, feet, "oben auf der Höhe der Plattform der Schanze");
+        assertTrue(world.solid(0, Basecamp.Y + 12, 28), "Plattform schließt an");
+        assertTrue(world.blockAt(3, Basecamp.Y + 3, 13).contains("lantern"), "Laterne am Antritt");
+        assertTrue(world.blockAt(-3, Basecamp.Y + 8, 21).contains("lantern"), "Laterne am Absatz");
     }
 }

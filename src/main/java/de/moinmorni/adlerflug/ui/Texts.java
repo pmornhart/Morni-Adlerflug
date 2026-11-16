@@ -44,14 +44,19 @@ public final class Texts {
                         + "course – the best times are in the <gold>flight book</gold>.");
         t("welcome.how", "<gray>So geht's: Lauf von der Schanze, die Flügel gehen von selbst auf. Mit der Maus lenkst "
                 + "du (nach unten = schneller, nach oben = steigen). Flieg der Reihe nach durch alle Ringe – "
-                + "<aqua>Aufwind-Säulen</aqua> heben dich an, <aqua>blaue Schub-Ringe</aqua> geben Schwung.</gray>",
+                + "<aqua>Aufwind-Säulen</aqua> heben dich an, <aqua>blaue Schub-Ringe</aqua> geben Schwung, "
+                + "<green>grüne Bonus-Ringe</green> schenken Zeit und <yellow>Tore im Takt</yellow> gehen auf und zu.</gray>",
                 "<gray>How it works: run off the ramp, your wings open by themselves. Steer with the mouse (down = "
                         + "faster, up = climb). Fly through every ring in order – <aqua>updrafts</aqua> lift you, "
-                        + "<aqua>blue boost rings</aqua> push you forward.</gray>");
+                        + "<aqua>blue boost rings</aqua> push you forward, <green>green bonus rings</green> give you time "
+                        + "and <yellow>timed gates</yellow> open and shut.</gray>");
         t("welcome.weekly", "<gray>Strecke der Woche:</gray> <course> <gray>– schaff sie bis Montag für das Abzeichen</gray> "
                 + "<badge><gray>!</gray>", "<gray>Course of the week:</gray> <course> <gray>– finish it by Monday to earn "
                 + "the</gray> <badge> <gray>badge!</gray>");
         t("badge", "<#f4a259>▲ Wochen-Adler</#f4a259>", "<#f4a259>▲ Eagle of the week</#f4a259>");
+        t("welcome.daily", "<#c084fc>Strecke des Tages:</#c084fc> <conditions> <gray>– an der Station mit ✦ oder mit "
+                + "<white>/adlerflug tag</white></gray>", "<#c084fc>Course of the day:</#c084fc> <conditions> <gray>– at the "
+                + "station with ✦ or with <white>/adlerflug tag</white></gray>");
         t("lobby.kick", "<gold>MoinMorni</gold>\n<gray>Zurück in die Lobby: Bitte verbinde dich neu mit dem Netzwerk.</gray>",
                 "<gold>MoinMorni</gold>\n<gray>Back to the lobby: please reconnect to the network.</gray>");
         t("free.back", "<gray>Gelandet – zurück im Adlerhorst. Eine Strecke wählst du mit der <gold>Flugkarte</gold>.</gray>",
@@ -70,6 +75,9 @@ public final class Texts {
         t("item.weekly", "<#f4a259><bold>Strecke der Woche</bold></#f4a259>", "<#f4a259><bold>Course of the week</bold></#f4a259>");
         t("item.weekly.lore", "<gray>Rechtsklick: <white><course></white> fliegen</gray>",
                 "<gray>Right-click: fly <white><course></white></gray>");
+        t("item.daily", "<#c084fc><bold>Strecke des Tages</bold></#c084fc>", "<#c084fc><bold>Course of the day</bold></#c084fc>");
+        t("item.daily.lore", "<gray>Rechtsklick: heute fliegen – jeden Tag anders</gray>",
+                "<gray>Right-click: fly today's course – different every day</gray>");
         t("item.hide.shown", "<green>Mitspieler: sichtbar</green>", "<green>Other players: visible</green>");
         t("item.hide.hidden", "<gray>Mitspieler: ausgeblendet</gray>", "<gray>Other players: hidden</gray>");
         t("item.hide.lore", "<gray>Rechtsklick: umschalten</gray>", "<gray>Right-click: toggle</gray>");
@@ -266,11 +274,12 @@ public final class Texts {
 
         // ---------- Befehle ----------
         t("cmd.help", "<gray>Befehle: <white>/adlerflug</white> (Strecken), <white>start \\<strecke></white>, "
-                + "<white>top \\<strecke></white>, <white>stats</white>, <white>woche</white>, <white>uebung</white>, "
+                + "<white>top \\<strecke></white>, <white>stats</white>, <white>woche</white>, <white>tag</white>, <white>uebung</white>, "
                 + "<white>geist</white>, <white>verstecken</white>, <white>ring</white>, <white>neustart</white>, "
                 + "<white>aufgeben</white>, <white>basislager</white>, <white>mitmachen</white>, <white>lobby</white></gray>",
                 "<gray>Commands: <white>/adlerflug</white> (courses), <white>start \\<strecke></white>, "
                         + "<white>top \\<strecke></white>, <white>stats</white>, <white>woche</white> (week), "
+                        + "<white>tag</white> (course of the day), "
                         + "<white>uebung</white> (practice), <white>geist</white> (ghost), <white>verstecken</white> "
                         + "(hide), <white>ring</white> (back), <white>neustart</white>, <white>aufgeben</white>, "
                         + "<white>basislager</white>, <white>mitmachen</white> (join race), <white>lobby</white></gray>");
@@ -285,6 +294,61 @@ public final class Texts {
                 "<gray>The world will be rebuilt on the next restart.</gray>");
         t("admin.reset", "<gray>Zeiten von <white><player></white> gelöscht (<what>).</gray>",
                 "<gray>Times of <white><player></white> deleted (<what>).</gray>");
+
+        // ---------- Mehr im Flug, Strecke des Tages (0.2) ----------
+        t("flight.extras", "<gray>Unterwegs:</gray> <list>", "<gray>On the way:</gray> <list>");
+        t("extras.moving", "<light_purple><n> bewegte Ringe</light_purple>", "<light_purple><n> moving rings</light_purple>");
+        t("extras.moving.one", "<light_purple>ein bewegter Ring</light_purple>", "<light_purple>a moving ring</light_purple>");
+        t("extras.gates", "<yellow><n> Tore im Takt</yellow>", "<yellow><n> timed gates</yellow>");
+        t("extras.gates.one", "<yellow>ein Tor im Takt</yellow>", "<yellow>a timed gate</yellow>");
+        t("extras.bonus", "<green><n> Bonus-Ringe (Zeit-Gutschrift)</green>", "<green><n> bonus rings (time credit)</green>");
+        t("extras.bonus.one", "<green>ein Bonus-Ring (Zeit-Gutschrift)</green>", "<green>a bonus ring (time credit)</green>");
+        t("extras.wind", "<aqua>Wind in Böen</aqua>", "<aqua>gusty wind</aqua>");
+        t("flight.bonus", "<green><bold>Bonus!</bold></green> <white>−<time></white> <gray>auf die Zeit</gray>",
+                "<green><bold>Bonus!</bold></green> <white>−<time></white> <gray>off your time</gray>");
+        t("flight.back.closed", "<red>Das Tor war zu</red> <gray>– zurück zum letzten Ring. Pass den Takt ab!</gray>",
+                "<red>The gate was shut</red> <gray>– back to the last ring. Watch the rhythm!</gray>");
+        t("hud.wind", "<aqua>Wind <arrow></aqua>", "<aqua>wind <arrow></aqua>");
+        t("hud.gate.open", "<green>Tor offen <white><time></white></green>", "<green>gate open <white><time></white></green>");
+        t("hud.gate.shut", "<red>Tor zu <white><time></white></red>", "<red>gate shut <white><time></white></red>");
+        t("finish.bonus", "<green><n> Bonus-Ring(e):</green> <white>−<time></white> <gray>Gutschrift</gray>",
+                "<green><n> bonus ring(s):</green> <white>−<time></white> <gray>credit</gray>");
+        t("finish.golden.all", "<gold><player></gold> <gray>hat auf</gray> <course> <gray>den</gray> "
+                + "<#c084fc>✦ Steinadler</#c084fc> <gray>erflogen – besser geht es nicht!</gray>",
+                "<gold><player></gold> <gray>earned the</gray> <#c084fc>✦ Golden Eagle</#c084fc> <gray>on</gray> <course>"
+                        + "<gray> – it doesn't get any better!</gray>");
+        t("finish.first.daily", "Heute zum ersten Mal auf <course>: <white><time></white>!",
+                "First flight on <course> today: <white><time></white>!");
+        t("finish.record.daily", "<gold><bold>Tagesrekord!</bold></gold> <white><player></white> <gray>fliegt</gray> "
+                + "<course> <gray>in</gray> <white><time></white>", "<gold><bold>Record of the day!</bold></gold> "
+                + "<white><player></white> <gray>flies</gray> <course> <gray>in</gray> <white><time></white>");
+        t("daily.today", "<gray>Heute gilt:</gray> <conditions>", "<gray>Today:</gray> <conditions>");
+        t("daily.head", "<#c084fc>Strecke des Tages</#c084fc> <conditions>", "<#c084fc>Course of the day</#c084fc> <conditions>");
+        t("daily.building", "<gray>Die Strecke des Tages wird gerade gebaut …</gray>",
+                "<gray>The course of the day is being built …</gray>");
+        t("daily.new", "<gray>Ein neuer Tag – die Strecke des Tages hat sich geändert. Schau sie dir an!</gray>",
+                "<gray>A new day – the course of the day has changed. Have a look!</gray>");
+        t("daily.over", "<white><time></white> <gray>– inzwischen gilt schon die Strecke von heute, darum zählt die Zeit "
+                + "nicht mehr für die Tagesliste.</gray>", "<white><time></white> <gray>– today's course is already "
+                + "out, so this time no longer counts for the daily leaderboard.</gray>");
+        t("daily.layout.normal", "Richtung wie immer", "usual direction");
+        t("daily.layout.gespiegelt", "gespiegelt", "mirrored");
+        t("daily.layout.umgedreht", "andersherum", "reversed");
+        t("daily.layout.beides", "andersherum und gespiegelt", "reversed and mirrored");
+        t("daily.small", "<red>kleine Ringe</red>", "<red>small rings</red>");
+        t("board.daily", "<#c084fc><bold>✦ Strecke des Tages ✦</bold></#c084fc>",
+                "<#c084fc><bold>✦ Course of the day ✦</bold></#c084fc>");
+        t("board.bonus", "<green><bold>Bonus −<time></bold></green>", "<green><bold>Bonus −<time></bold></green>");
+        t("board.wind", "<aqua>≋ Wind ≋</aqua>", "<aqua>≋ Wind ≋</aqua>");
+        t("menu.daily", "<#c084fc><bold>Strecke des Tages</bold></#c084fc>", "<#c084fc><bold>Course of the day</bold></#c084fc>");
+        t("menu.daily.sub", "<#c084fc>✦ Strecke des Tages – jeden Tag anders, für alle gleich</#c084fc>",
+                "<#c084fc>✦ Course of the day – different every day, the same for everyone</#c084fc>");
+        t("menu.pick.gate", "<yellow>Tor im Takt</yellow> <gray>– Einstieg kurz davor</gray>",
+                "<yellow>Timed gate</yellow> <gray>– start just before it</gray>");
+        t("menu.pick.moving", "<light_purple>Bewegter Ring</light_purple> <gray>– Einstieg kurz davor</gray>",
+                "<light_purple>Moving ring</light_purple> <gray>– start just before it</gray>");
+        t("stats.days", "<gray>Strecke des Tages geschafft an</gray> <white><n></white> <gray>Tagen</gray>",
+                "<gray>Course of the day finished on</gray> <white><n></white> <gray>days</gray>");
 
         // ---------- Zeit ----------
         t("time.days", "<d> Tagen <h> Std.", "<d> days <h> h");

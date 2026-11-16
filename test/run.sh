@@ -118,7 +118,12 @@ for _ in $(seq 1 300); do
   if ! kill -0 "$PID" 2>/dev/null; then echo "Server ist abgestürzt:"; tail -40 console.log; exit 1; fi
   sleep 1
 done
-grep -E "Modell gebaut|Adlerflug-Welt bereit|Adlerflug ist bereit|Strecken vorbereitet|Netzwerk|nicht fliegbar" console.log || true
+# Die Strecke des Tages wird nach dem Start im Hintergrund gerechnet.
+for _ in $(seq 1 120); do
+  if grep -q "Strecke des Tages bereit" console.log; then break; fi
+  sleep 1
+done
+grep -E "Modell gebaut|Adlerflug-Welt bereit|Adlerflug ist bereit|Strecken vorbereitet|Strecke des Tages|Netzwerk|nicht fliegbar" console.log || true
 
 if [ "${SKIP_TEST:-0}" = "1" ]; then
   echo "Server läuft (PID $PID) – anhalten mit: node $HERE/rcon.cjs 127.0.0.1:$RCON_PORT $SERVER/.rcon-pass stop"

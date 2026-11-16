@@ -42,7 +42,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class Construction implements Listener {
 
     /** Bau-Version: erhöhen, wenn sich Landschaft, Basislager oder Strecken ändern – dann entsteht die Welt neu. */
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
     /** Bis hierhin überträgt der Server die Ring-Anzeigen (Blöcke). */
     private static final int DISPLAY_RANGE = 320;
     private static final String STAMP = "welt.yml";
@@ -205,7 +205,7 @@ public final class Construction implements Listener {
     public void warmUp(int perSecond) {
         List<long[]> todo = new ArrayList<>();
         java.util.Set<Long> seen = new java.util.HashSet<>();
-        for (Course c : model.courses()) {
+        for (Course c : model.everyLayout()) {
             for (Vec p : c.pathPoints(8)) {
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dz = -1; dz <= 1; dz++) {

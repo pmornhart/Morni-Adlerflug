@@ -20,6 +20,8 @@ public final class PlayerRecord {
         public int finishes;
         public int flights;
         public int resets;
+        /** Fingerabdruck der Strecke, zu der die Bestzeit gehört ({@code Course#signature}). */
+        public String sig = "";
     }
 
     public final UUID uuid;
@@ -37,6 +39,10 @@ public final class PlayerRecord {
     public boolean weekDone;
     public boolean ghost = true;
     public boolean hideOthers;
+    /** Strecke des Tages: Tag (z. B. „2026-11-16“), für den die Werte von „tagesflug“ gelten. */
+    public String dayId = "";
+    /** An so vielen Tagen die Strecke des Tages geschafft. */
+    public int days;
 
     public PlayerRecord(UUID uuid, String name) {
         this.uuid = uuid;
@@ -63,6 +69,23 @@ public final class PlayerRecord {
         }
     }
 
+    /**
+     * Tag wechseln: Bestzeit und Zwischenzeiten der Strecke des Tages ({@code daily}) gelten nur für einen Tag (Zähler
+     * wie Flüge und Ziele bleiben).
+     */
+    public void enterDay(String id, String daily) {
+        if (!id.equals(dayId)) {
+            dayId = id;
+            CourseStats s = courses.get(daily);
+            if (s != null) {
+                s.best = 0;
+                s.bestWhen = 0;
+                s.splits = new ArrayList<>();
+                s.sig = "";
+            }
+        }
+    }
+
     /** Hat der Spieler in der Woche {@code id} die Strecke der Woche geschafft? (Abzeichen „Wochen-Adler“) */
     public boolean weeklyDone(String id) {
         return id.equals(weekId) && weekDone;
@@ -84,6 +107,7 @@ public final class PlayerRecord {
             c.put("finishes", s.finishes);
             c.put("flights", s.flights);
             c.put("resets", s.resets);
+            c.put("sig", s.sig);
             cs.put(id, c);
         });
         m.put("courses", cs);
@@ -96,6 +120,10 @@ public final class PlayerRecord {
         m.put("week", w);
         m.put("ghost", ghost);
         m.put("hide-others", hideOthers);
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("id", dayId);
+        d.put("days", days);
+        m.put("day", d);
         return m;
     }
 
@@ -119,6 +147,7 @@ public final class PlayerRecord {
                     s.finishes = (int) num(c.get("finishes"));
                     s.flights = (int) num(c.get("flights"));
                     s.resets = (int) num(c.get("resets"));
+                    s.sig = str(c.get("sig"), "");
                 }
             });
         }
@@ -131,6 +160,10 @@ public final class PlayerRecord {
         }
         r.ghost = !Boolean.FALSE.equals(m.get("ghost"));
         r.hideOthers = Boolean.TRUE.equals(m.get("hide-others"));
+        if (m.get("day") instanceof Map<?, ?> d) {
+            r.dayId = str(d.get("id"), "");
+            r.days = (int) num(d.get("days"));
+        }
         return r;
     }
 

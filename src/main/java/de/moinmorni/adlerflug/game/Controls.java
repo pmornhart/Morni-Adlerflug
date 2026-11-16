@@ -71,8 +71,14 @@ public final class Controls implements Listener {
                     pl.flights().select(p, w);
                 }
             }
+            case Items.DAILY -> {
+                var d = pl.daily();
+                if (d != null) {
+                    pl.flights().select(p, d.course());
+                }
+            }
             case Items.HIDE -> pl.toggleHide(p);
-            case Items.LOBBY -> pl.net().toLobby(p);
+            case Items.LOBBY -> pl.net().askToLobby(p);
             case Items.BACK -> pl.flights().backToRing(p);
             case Items.RESTART -> pl.flights().restart(p);
             case Items.GIVEUP -> pl.flights().giveUp(p);
@@ -82,7 +88,7 @@ public final class Controls implements Listener {
                     pl.menus().rings(p, c);
                 }
             }
-            case Items.AGAIN -> pl.model().course(id.substring(id.indexOf(':') + 1)).ifPresent(c -> pl.flights().select(p, c));
+            case Items.AGAIN -> pl.course(id.substring(id.indexOf(':') + 1)).ifPresent(c -> pl.flights().select(p, c));
             case Items.BASE -> pl.toBasecamp(p);
             case Items.RACE -> pl.flights().joinRace(p);
             default -> {
@@ -112,7 +118,7 @@ public final class Controls implements Listener {
     private Course stationAt(Block b) {
         for (Basecamp.Station s : pl.model().basecamp().stations()) {
             if (s.signX() == b.getX() && s.signY() == b.getY() && s.signZ() == b.getZ()) {
-                return pl.model().course(s.course()).orElse(null);
+                return pl.course(s.course()).orElse(null);
             }
         }
         return null;

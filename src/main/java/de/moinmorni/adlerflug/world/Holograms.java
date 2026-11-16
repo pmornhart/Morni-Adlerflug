@@ -95,6 +95,32 @@ public final class Holograms implements Listener {
         byId.put(s.id, s);
     }
 
+    /** Alle Tafeln entfernen, deren Kennung mit {@code prefix} beginnt (z. B. die der alten Strecke des Tages). */
+    public void remove(java.util.function.Predicate<String> which) {
+        for (java.util.Iterator<Spec> it = byId.values().iterator(); it.hasNext(); ) {
+            Spec s = it.next();
+            if (!which.test(s.id)) {
+                continue;
+            }
+            s.spawned.values().forEach(Entity::remove);
+            s.spawned.clear();
+            List<Spec> list = byChunk.get(s.chunk());
+            if (list != null) {
+                list.remove(s);
+            }
+            it.remove();
+        }
+    }
+
+    /** Neue Tafel gleich erzeugen, wenn ihr Chunk schon geladen ist (nach {@link #start}). */
+    public void spawnLoaded() {
+        for (Spec s : byId.values()) {
+            if (world.isChunkLoaded((int) Math.floor(s.x) >> 4, (int) Math.floor(s.z) >> 4)) {
+                spawn(s);
+            }
+        }
+    }
+
     /** Alte Reste entfernen und alles in geladenen Chunks erzeugen. */
     public void start() {
         for (Entity e : world.getEntities()) {
@@ -126,7 +152,12 @@ public final class Holograms implements Listener {
             return;
         }
         // Erst im nächsten Tick: beim Laden selbst keine neuen Wesen erzeugen.
-        Bukkit.getScheduler().runTask(plugin, () -> list.forEach(this::spawn));
+        List<Spec> copy = List.copyOf(list);
+        Bukkit.getScheduler().runTask(plugin, () -> copy.forEach(s -> {
+            if (byId.get(s.id) == s) {
+                spawn(s);
+            }
+        }));
     }
 
     private void spawn(Spec s) {

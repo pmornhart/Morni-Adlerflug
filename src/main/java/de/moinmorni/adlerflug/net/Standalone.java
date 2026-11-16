@@ -41,6 +41,16 @@ final class Standalone implements Network {
     }
 
     @Override
+    public void askToLobby(Player player) {
+        toLobby(player);
+    }
+
+    @Override
+    public void playing(Player player, boolean playing) {
+        // ohne Netzwerk fragt niemand nach
+    }
+
+    @Override
     public CompletableFuture<Optional<Party>> party(UUID player) {
         return CompletableFuture.completedFuture(Optional.empty());
     }

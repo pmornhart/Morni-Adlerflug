@@ -5,6 +5,7 @@ import de.moinmorni.adlerflug.course.Course;
 import de.moinmorni.adlerflug.course.Medal;
 import de.moinmorni.adlerflug.courses.Scenery;
 import de.moinmorni.adlerflug.data.Store;
+import de.moinmorni.adlerflug.flight.Air;
 import de.moinmorni.adlerflug.flight.Glide;
 import de.moinmorni.adlerflug.flight.Ring;
 import de.moinmorni.adlerflug.flight.RingCheck;
@@ -44,8 +45,11 @@ import org.bukkit.util.Vector;
 
 /**
  * Herz von Adlerflug: die Flüge. Jeden Tick wird für jeden Flieger geprüft, ob er abspringt, durch den nächsten Ring
- * fliegt (aus der Strecke zwischen zwei Positionen – auch bei hohem Tempo), einen Ring verpasst, zu weit weg ist oder
- * gelandet ist. Aufwind-Säulen heben an, Schub-Ringe schieben. Zeiten in Ticks mit Bruchteilen ({@link RunClock}).
+ * fliegt (aus der Strecke zwischen zwei Positionen – auch bei hohem Tempo), einen Ring verpasst, gegen ein
+ * geschlossenes Takt-Tor fliegt, zu weit weg ist oder gelandet ist. Aufwind-Säulen heben an, Schub-Ringe schieben,
+ * Windzonen und der Wind des Tages drücken in Böen, Bonus-Ringe schenken Zeit. Bewegte Ringe und Tore laufen nach der
+ * Flugzeit jedes Fliegers ({@link Flight#ringTime}) – genau wie im Musterflug. Zeiten in Ticks mit Bruchteilen
+ * ({@link RunClock}).
  */
 public final class Flights {
 
@@ -107,7 +111,8 @@ public final class Flights {
             return "none";
         }
         return f.course.id + " state=" + f.state + " next=" + f.next + " resets=" + f.resets + " practice=" + f.practice
-                + " race=" + (f.race != null) + " guide=" + f.guide;
+                + " race=" + (f.race != null) + " guide=" + f.guide + " bonus=" + count(f.bonusGot) + " credit=" + f.credit
+                + " time=" + Math.round(flightTime(f)) + " playing=" + f.playing;
     }
 
     // =========================================================================================
@@ -162,7 +167,7 @@ public final class Flights {
         f.state = race != null ? Flight.State.FROZEN : Flight.State.READY;
         f.fromRing = fromRing;
         PlayerRecord rec = pl.store().record(id, p.getName());
-        if (rec.ghost && !f.practice) {
+        if (rec.ghost && !f.practice && rec.best(c.id) > 0) {
             f.ghost = ghost(id, c.id);
         }
         flights.put(id, f);
@@ -170,6 +175,8 @@ public final class Flights {
         landingAt.remove(id);
         pl.hotbar().flight(p, f.practice);
         pl.tint().reset(p, c);
+        pl.tint().begin(p, c);
+        pl.dayLook(p, c);
         String l = pl.lang(p);
         f.bar = BossBar.bossBar(courseName(c, l), 0f, BossBar.Color.YELLOW, BossBar.Overlay.NOTCHED_10);
         p.showBossBar(f.bar);
@@ -182,6 +189,12 @@ public final class Flights {
                 Texts.arg("n", c.ringCount())), LONG));
         p.sendMessage(Texts.chat(l, "flight.welcome", Texts.comp("course", courseName(c, l)),
                 Texts.comp("diff", difficulty(c, l)), Texts.arg("n", c.ringCount())));
+        if (c.daily()) {
+            p.sendMessage(Texts.chat(l, "daily.today", Texts.comp("conditions", pl.dailyText(l))));
+        }
+        if (!c.bonus.isEmpty() || !c.dynamicRings().isEmpty() || !c.winds.isEmpty()) {
+            p.sendMessage(Texts.chat(l, "flight.extras", Texts.comp("list", extras(c, l))));
+        }
         if (race != null) {
             p.sendMessage(Texts.chat(l, "race.wait", Texts.arg("sec", pl.settings().raceWait)));
         }
@@ -197,14 +210,16 @@ public final class Flights {
         Vec v = c.pathAt(t + 1).sub(at);
         f.next = ring;
         for (int i = 0; i < ring; i++) {
-            pl.tint().passed(p, c, i);
+            pl.tint().skip(p, c, c.rings.get(i));
         }
         Location loc = new Location(pl.world(), at.x(), at.y(), at.z(), v.yaw(), v.pitch());
         teleport(p, f, loc);
         f.state = Flight.State.FLYING;
         f.clock = new RunClock(tick, 0);
+        f.ringBase = tick - t;
         f.launch = v;
         f.glideUntil = tick + 10;
+        setPlaying(p, f, true);
         String l = pl.lang(p);
         p.sendMessage(Texts.chat(l, "practice.from", Texts.arg("n", ring + 1), Texts.comp("course", courseName(c, l))));
     }
@@ -274,6 +289,7 @@ public final class Flights {
         if (f.state != Flight.State.FROZEN) {
             f.state = Flight.State.READY;
         }
+        setPlaying(p, f, false);
         pl.tint().reset(p, c);
         p.setGliding(false);
         teleport(p, f, pl.startLocation(c, 0));
@@ -302,7 +318,9 @@ public final class Flights {
         if (f.bar != null) {
             p.hideBossBar(f.bar);
         }
+        setPlaying(p, f, false);
         pl.tint().reset(p, f.course);
+        pl.tint().end(p);
         if (f.race != null) {
             f.race.out.add(id);
             checkRaceOver(f.race);
@@ -340,9 +358,10 @@ public final class Flights {
 
     /**
      * Test-Autopilot (nur für Verwaltung und Tests): Der Server führt den Spieler Tick für Tick den Musterflug entlang
-     * – bis Ring {@code until} (Index, sonst bis ins Ziel), an Ring {@code miss} absichtlich vorbei.
+     * – bis Ring {@code until} (Index, sonst bis ins Ziel), an Ring {@code miss} absichtlich vorbei. Mit {@code bonus}
+     * (nur von der Schanze) fliegt er den Weg über alle Bonus-Ringe; {@code late} verschiebt die Flugzeit (Tor zu).
      */
-    public boolean guide(Player p, int until, int miss) {
+    public boolean guide(Player p, int until, int miss, boolean bonus, int late) {
         Flight f = flights.get(p.getUniqueId());
         if (f == null) {
             return false;
@@ -351,9 +370,11 @@ public final class Flights {
             Location line = toLocation(f.course.start.line(), f.course.start.yaw());
             teleport(p, f, line);
         }
+        f.guideBonus = bonus && f.state != Flight.State.FLYING && f.course.bonusPath != null;
         f.guide = f.state == Flight.State.FLYING ? f.course.tickBefore(f.next, 1) : 0;
         f.guideUntil = until < 0 ? Integer.MAX_VALUE : until;
         f.guideMiss = miss;
+        f.guideLate = late;
         return true;
     }
 
@@ -417,7 +438,13 @@ public final class Flights {
         Vec moved = f.hasPrev ? c1.sub(f.prev) : Vec.ZERO;
         f.prev = c1;
         f.hasPrev = true;
+        pl.tint().follow(p, c, flightTime(f));
         hud(p, f, c1, moved);
+    }
+
+    /** Flugzeit der bewegten Ringe (vor dem Absprung steht alles so, wie es beim Absprung sein wird). */
+    private double flightTime(Flight f) {
+        return f.state == Flight.State.FLYING ? f.ringTime(tick) : 0;
     }
 
     /** Ein Tick in der Luft; true = der Flug ist für diesen Tick erledigt (zurückgesetzt oder im Ziel). */
@@ -443,28 +470,38 @@ public final class Flights {
             }
         }
         Vec v = c1.sub(c0);
+        double t0 = f.ringTime(tick) - 1;
+        Vec after = v;
         if (f.next < c.ringCount()) {
             Ring ring = c.rings.get(f.next);
-            RingCheck.Result r = RingCheck.check(ring, c0, c1);
-            if (r.hit() == RingCheck.Hit.THROUGH) {
-                ring(p, f, ring, r.fraction(), v);
-                if (!flights.containsKey(p.getUniqueId())) {
-                    return true; // im Ziel
+            RingCheck.Result r = RingCheck.check(ring, c0, c1, t0);
+            switch (r.hit()) {
+                case THROUGH -> {
+                    after = ring(p, f, ring, r.fraction(), v);
+                    if (!flights.containsKey(p.getUniqueId())) {
+                        return true; // im Ziel
+                    }
                 }
-            } else if (r.hit() == RingCheck.Hit.MISSED) {
-                reset(p, f, "flight.back.missed");
-                return true;
+                case MISSED -> {
+                    reset(p, f, "flight.back.missed");
+                    return true;
+                }
+                case CLOSED -> {
+                    reset(p, f, "flight.back.closed");
+                    return true;
+                }
+                default -> {
+                }
+            }
+        }
+        for (int i = 0; i < f.bonusGot.length; i++) {
+            Ring b = c.bonus.get(i);
+            if (!f.bonusGot[i] && RingCheck.check(b, c0, c1, t0).hit() == RingCheck.Hit.THROUGH) {
+                bonus(p, f, i, b, t0);
             }
         }
         if (f.guide < 0) {
-            Updraft u = c.updraftAt(c1);
-            if (u != null) {
-                Vec lifted = u.lift(v);
-                p.setVelocity(new Vector(lifted.x(), lifted.y(), lifted.z()));
-                if (tick % 3 == 0) {
-                    p.playSound(p.getLocation(), Sound.ITEM_ELYTRA_FLYING, 0.25f, 1.6f);
-                }
-            }
+            drift(p, f, c1, after);
         }
         if (feet.y() < c.floorY) {
             reset(p, f, "flight.back.fell");
@@ -488,10 +525,97 @@ public final class Flights {
         return false;
     }
 
+    /**
+     * Was in der Luft wirkt, genau wie im Musterflug ({@link Air#drift}): Aufwind hebt jeden Tick an, Windzonen und der
+     * Wind des Tages kommen als Böe. Nur wenn sich etwas ändert, bekommt der Flieger eine neue Geschwindigkeit.
+     */
+    private void drift(Player p, Flight f, Vec c1, Vec v) {
+        Course c = f.course;
+        long flightTick = Math.round(f.ringTime(tick));
+        Vec next = c.air().drift(c1, v, flightTick);
+        if (next.sub(v).length() < 1e-6) {
+            return;
+        }
+        p.setVelocity(new Vector(next.x(), next.y(), next.z()));
+        Location at = p.getLocation();
+        if (c.updraftAt(c1) != null && tick % 3 == 0) {
+            p.playSound(at, Sound.ITEM_ELYTRA_FLYING, 0.25f, 1.6f);
+        }
+        if (Air.gust(flightTick)) {
+            Vec push = c.air().push(c1);
+            if (push.length() > 1e-6) {
+                Vec d = push.normalize();
+                p.playSound(at, Sound.ENTITY_BREEZE_IDLE_AIR, 0.5f, 1.2f);
+                for (int i = 0; i < 6; i++) {
+                    double back = 1.5 + i * 0.6;
+                    p.spawnParticle(Particle.CLOUD, at.getX() - d.x() * back, at.getY() + 0.4, at.getZ() - d.z() * back,
+                            0, d.x(), 0, d.z(), 0.35);
+                }
+            }
+        }
+    }
+
+    /** Bonus-Ring eingesammelt: Zeit-Gutschrift, Ring verschwindet, Ton. */
+    private void bonus(Player p, Flight f, int i, Ring b, double t0) {
+        f.bonusGot[i] = true;
+        f.credit += b.credit();
+        pl.tint().passed(p, f.course, b, t0 + 1);
+        String l = pl.lang(p);
+        Component msg = Texts.get(l, "flight.bonus", Texts.arg("time", TimeFormat.seconds(b.credit(), l)));
+        f.splitText = msg;
+        f.splitShownUntil = tick + 30;
+        p.sendActionBar(msg);
+        Location at = p.getLocation();
+        p.playSound(at, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.9f, 1.4f);
+        p.playSound(at, Sound.BLOCK_AMETHYST_BLOCK_CHIME, 0.9f, 1.6f);
+        p.spawnParticle(Particle.HAPPY_VILLAGER, at.getX(), at.getY() + 0.5, at.getZ(), 20, 0.7, 0.7, 0.7, 0);
+        if (!f.practice) {
+            pl.net().stats(p.getUniqueId(), Map.of("bonus_rings", 1L), Map.of());
+        }
+    }
+
+    /** Fliegt gerade (Zeit läuft) – dem Netzwerk nur Änderungen melden. */
+    private void setPlaying(Player p, Flight f, boolean on) {
+        if (f.playing != on) {
+            f.playing = on;
+            pl.net().playing(p, on);
+        }
+    }
+
+    /** Was es auf der Strecke Besonderes gibt (für die Begrüßung): Bonus-Ringe, bewegte Ringe, Tore, Wind. */
+    static Component extras(Course c, String l) {
+        return Texts.MM.deserialize("<gray>" + extrasText(c, l) + "</gray>");
+    }
+
+    /** Wie {@link #extras} als MiniMessage-Text (leer, wenn es nichts Besonderes gibt). */
+    public static String extrasText(Course c, String l) {
+        List<String> parts = new ArrayList<>();
+        long moving = c.rings.stream().filter(r -> r.motion() != null).count();
+        long gates = c.rings.stream().filter(r -> r.gate() != null).count();
+        if (moving > 0) {
+            parts.add(Texts.raw(l, moving == 1 ? "extras.moving.one" : "extras.moving").replace("<n>",
+                    String.valueOf(moving)));
+        }
+        if (gates > 0) {
+            parts.add(Texts.raw(l, gates == 1 ? "extras.gates.one" : "extras.gates").replace("<n>", String.valueOf(gates)));
+        }
+        if (!c.bonus.isEmpty()) {
+            parts.add(Texts.raw(l, c.bonus.size() == 1 ? "extras.bonus.one" : "extras.bonus").replace("<n>",
+                    String.valueOf(c.bonus.size())));
+        }
+        if (!c.winds.isEmpty()) {
+            parts.add(Texts.raw(l, "extras.wind"));
+        }
+        return String.join("<dark_gray> · </dark_gray>", parts);
+    }
+
     /** Absprung: Zeit läuft, Flügel auf, Schwung von der Schanze. */
     private void takeOff(Player p, Flight f, double fraction) {
         f.state = Flight.State.FLYING;
         f.clock = new RunClock(tick, fraction);
+        // Flugzeit wie im Musterflug: an der Kante 0, in diesem Tick schon ein Stück darüber hinaus
+        f.ringBase = tick - 1 + Math.max(0, Math.min(1, fraction));
+        setPlaying(p, f, true);
         double speed = pl.settings().launch;
         f.launch = speed <= 0 ? null : f.course.start.launch().normalize().mul(speed);
         f.glideUntil = tick + 6;
@@ -512,18 +636,18 @@ public final class Flights {
         pl.net().stats(p.getUniqueId(), Map.of("flights", 1L), Map.of());
     }
 
-    /** Durch einen Ring: Zwischenzeit, Schub, Farbe, Ton. */
-    private void ring(Player p, Flight f, Ring ring, double fraction, Vec v) {
-        long ms = f.clock.at(tick, fraction);
+    /** Durch einen Ring: Zwischenzeit, Schub, Farbe, Ton. Gibt die Geschwindigkeit danach zurück (Schub-Ring). */
+    private Vec ring(Player p, Flight f, Ring ring, double fraction, Vec v) {
+        long ms = Math.max(1, f.clock.at(tick, fraction) - f.credit);
         int index = ring.index();
         f.splits[index] = ms;
         f.next++;
         f.ringsThisFlight++;
         f.landed = 0;
-        pl.tint().passed(p, f.course, index);
+        pl.tint().passed(p, f.course, ring, f.ringTime(tick) - 1 + fraction);
         if (ring.finish()) {
             finish(p, f, ms);
-            return;
+            return v;
         }
         String l = pl.lang(p);
         PlayerRecord rec = pl.store().record(p.getUniqueId(), p.getName());
@@ -539,8 +663,10 @@ public final class Flights {
         p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 0.9f, pitch);
         Location at = p.getLocation();
         p.spawnParticle(Particle.HAPPY_VILLAGER, at.getX(), at.getY() + 0.5, at.getZ(), 12, 0.6, 0.6, 0.6, 0);
+        Vec out = v;
         if (ring.kind() == Ring.Kind.BOOST && f.guide < 0) {
             Vec b = ring.boost(v);
+            out = b;
             p.setVelocity(new Vector(b.x(), b.y(), b.z()));
             p.setGliding(true);
             p.playSound(at, Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 0.9f, 1.1f);
@@ -550,6 +676,7 @@ public final class Flights {
         if (f.bar != null) {
             f.bar.progress(Math.min(1f, (float) f.next / f.course.ringCount()));
         }
+        return out;
     }
 
     /**
@@ -577,6 +704,7 @@ public final class Flights {
                 if (f.state != Flight.State.FROZEN) {
                     f.state = Flight.State.READY;
                 }
+                setPlaying(p, f, false);
             }
             p.setGliding(false);
             teleport(p, f, pl.startLocation(c, 0));
@@ -586,6 +714,8 @@ public final class Flights {
             Vec at = c.pathAt(t);
             Vec v = c.pathAt(t + 1).sub(at);
             teleport(p, f, new Location(pl.world(), at.x(), at.y(), at.z(), v.yaw(), Math.max(-20, v.pitch())));
+            // bewegte Ringe, Tore und Böen stehen danach so wie beim Musterflug an dieser Stelle
+            f.ringBase = tick - t;
             f.launch = v;
             f.glideUntil = tick + 10;
             p.sendActionBar(Texts.get(l, "flight.back.ring", Texts.arg("n", Math.max(1, f.next))));
@@ -599,6 +729,8 @@ public final class Flights {
         UUID id = p.getUniqueId();
         Course c = f.course;
         flights.remove(id);
+        setPlaying(p, f, false);
+        pl.tint().end(p);
         if (f.bar != null) {
             f.bar.progress(1f);
             Bukkit.getScheduler().runTaskLater(pl, () -> p.hideBossBar(f.bar), 60L);
@@ -611,6 +743,10 @@ public final class Flights {
         Location at = p.getLocation();
         p.spawnParticle(Particle.FIREWORK, at.getX(), at.getY() + 1, at.getZ(), 50, 0.6, 0.8, 0.6, 0.1);
         p.playSound(at, Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.8f, 1f);
+        if (f.credit > 0) {
+            p.sendMessage(Texts.chat(l, "finish.bonus", Texts.arg("n", count(f.bonusGot)),
+                    Texts.arg("time", TimeFormat.seconds(f.credit, l))));
+        }
         if (f.practice) {
             p.showTitle(Title.title(Texts.get(l, "finish.title"), Component.text(TimeFormat.clock(ms, l),
                     NamedTextColor.LIGHT_PURPLE), LONG));
@@ -627,6 +763,14 @@ public final class Flights {
             pl.state();
             return;
         }
+        if (c.daily() && !c.day.equals(store.dayId())) {
+            // Mitternacht ist vorbei: die Strecke von gestern hat keine Bestenliste mehr
+            p.sendMessage(Texts.chat(l, "daily.over", Texts.arg("time", TimeFormat.clock(ms, l))));
+            reportEnd(p, f);
+            store.save(rec);
+            pl.state();
+            return;
+        }
         PlayerRecord.CourseStats cs = rec.course(c.id);
         long before = cs.best;
         Leaderboard board = store.board(c.id);
@@ -637,6 +781,9 @@ public final class Flights {
         Medal oldMedal = before > 0 ? c.medal(before) : null;
         Medal medal = c.medal(pb ? ms : before);
         long now = Store.now();
+        if (c.daily() && before == 0) {
+            rec.days++;
+        }
         if (pb) {
             cs.best = ms;
             cs.bestWhen = now;
@@ -665,8 +812,8 @@ public final class Flights {
         p.showTitle(Title.title(Texts.get(l, "finish.title"), Texts.get(l, "finish.sub", Texts.arg("time",
                 TimeFormat.clock(ms, l)), Texts.comp("medal", medal(shown, l))), LONG));
         if (before == 0) {
-            p.sendMessage(Texts.chat(l, "finish.first", Texts.comp("course", courseName(c, l)),
-                    Texts.arg("time", TimeFormat.clock(ms, l))));
+            p.sendMessage(Texts.chat(l, c.daily() ? "finish.first.daily" : "finish.first",
+                    Texts.comp("course", courseName(c, l)), Texts.arg("time", TimeFormat.clock(ms, l))));
         } else if (pb) {
             p.sendMessage(Texts.chat(l, "finish.pb", Texts.arg("time", TimeFormat.clock(ms, l)),
                     Texts.comp("delta", Component.text("(" + TimeFormat.diff(ms - before, l) + ")", NamedTextColor.GREEN)),
@@ -677,17 +824,25 @@ public final class Flights {
                     Texts.arg("best", TimeFormat.clock(before, l))));
         }
         int newTiers = Medal.tiers(medal) - Medal.tiers(oldMedal);
+        boolean newEagle = newTiers > 0 && Medal.tiers(oldMedal) < Medal.tiers(Medal.ADLER)
+                && Medal.tiers(medal) >= Medal.tiers(Medal.ADLER);
+        boolean newGolden = newTiers > 0 && medal == Medal.STEINADLER;
         if (newTiers > 0) {
             p.sendMessage(Texts.chat(l, "finish.medal", Texts.comp("medal", medal(medal, l))));
-            if (medal == Medal.ADLER) {
-                p.playSound(at, Sound.ENTITY_PHANTOM_AMBIENT, 0.6f, 1.6f);
+            if (newEagle || newGolden) {
+                p.playSound(at, Sound.ENTITY_PHANTOM_AMBIENT, 0.6f, newGolden ? 1.0f : 1.6f);
+                String key = newGolden ? "finish.golden.all" : "finish.eagle.all";
                 for (Player o : Bukkit.getOnlinePlayers()) {
                     if (!o.equals(p)) {
                         String ol = pl.lang(o);
-                        o.sendMessage(Texts.chat(ol, "finish.eagle.all", Texts.arg("player", p.getName()),
+                        o.sendMessage(Texts.chat(ol, key, Texts.arg("player", p.getName()),
                                 Texts.comp("course", courseName(c, ol))));
                     }
                 }
+            }
+            if (newGolden) {
+                p.getWorld().spawnParticle(Particle.END_ROD, at.getX(), at.getY() + 1, at.getZ(), 80, 0.8, 1.2, 0.8, 0.15);
+                p.playSound(at, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 0.7f);
             }
         }
         Medal next = Medal.next(medal);
@@ -704,8 +859,9 @@ public final class Flights {
         if (pb && newRecord != null && newRecord.uuid().equals(id) && (oldRecord == null || oldRecord.ms() > ms)) {
             for (Player o : Bukkit.getOnlinePlayers()) {
                 String ol = pl.lang(o);
-                o.sendMessage(Texts.chat(ol, "finish.record", Texts.arg("player", p.getName()),
-                        Texts.comp("course", courseName(c, ol)), Texts.arg("time", TimeFormat.clock(ms, ol))));
+                o.sendMessage(Texts.chat(ol, c.daily() ? "finish.record.daily" : "finish.record",
+                        Texts.arg("player", p.getName()), Texts.comp("course", courseName(c, ol)),
+                        Texts.arg("time", TimeFormat.clock(ms, ol))));
                 o.playSound(o.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_TWINKLE, 0.7f, 1f);
             }
             p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, at.getX(), at.getY() + 1, at.getZ(), 60, 0.6, 1, 0.6, 0.3);
@@ -723,23 +879,41 @@ public final class Flights {
                 }
             }
         }
-        // Netzwerk: Zähler (ohne Bestwerte) und Bestzeit getrennt.
+        // Netzwerk: Zähler (ohne Bestwerte) und Bestzeit getrennt. Die Strecke des Tages ist jeden Tag anders: Zähler
+        // ja, Bestzeit und Medaillen nicht (nicht vergleichbar).
         Map<String, Long> add = new LinkedHashMap<>();
         add.put("finishes", 1L);
         add.put("finishes_" + c.id, 1L);
-        if (newTiers > 0) {
+        if (c.daily()) {
+            if (before == 0) {
+                add.put("days", 1L);
+            }
+        } else if (newTiers > 0) {
             add.put("medals", (long) newTiers);
-            if (medal == Medal.ADLER) {
+            if (newEagle) {
                 add.put("eagles", 1L);
+            }
+            if (newGolden) {
+                add.put("golden_eagles", 1L);
             }
         }
         pl.net().stats(id, add, Map.of());
-        pl.net().stats(id, Map.of(), Map.of("time_" + c.id + "_ms", ms));
+        if (!c.daily()) {
+            pl.net().stats(id, Map.of(), Map.of("time_" + c.id + "_ms", ms));
+        }
         reportEnd(p, f);
         store.save(rec);
         pl.boards(c.id);
         raceResult(p, f, ms);
         pl.state();
+    }
+
+    private static int count(boolean[] b) {
+        int n = 0;
+        for (boolean x : b) {
+            n += x ? 1 : 0;
+        }
+        return n;
     }
 
     /** Ringe und Zurücksetzungen dieses Flugs ans Netzwerk und in die Spielerdatei (einmal pro Flug). */
@@ -799,7 +973,8 @@ public final class Flights {
             if (tick < f.splitShownUntil && f.splitText != null) {
                 p.sendActionBar(f.splitText);
             } else if (f.state == Flight.State.FLYING) {
-                long ms = f.clock.now(tick);
+                long ms = f.now(tick);
+                double time = f.ringTime(tick);
                 Component bar = Component.text("⏱ ", NamedTextColor.AQUA)
                         .append(Component.text(TimeFormat.clock(ms, l), NamedTextColor.WHITE))
                         .append(Component.text("  ·  ", NamedTextColor.DARK_GRAY))
@@ -808,7 +983,15 @@ public final class Flights {
                         .append(Component.text("  ·  ", NamedTextColor.DARK_GRAY))
                         .append(Component.text(Glide.kmh(moved) + " km/h", NamedTextColor.YELLOW));
                 if (next != null) {
-                    bar = bar.append(Component.text("  " + arrow(p, next.center().sub(c1)), NamedTextColor.GOLD));
+                    bar = bar.append(Component.text("  " + arrow(p, next.centerAt(time).sub(c1)), NamedTextColor.GOLD));
+                    if (next.gate() != null) {
+                        bar = bar.append(Component.text("  ·  ", NamedTextColor.DARK_GRAY)).append(gateState(next, time, l));
+                    }
+                }
+                Vec push = c.air().push(c1);
+                if (push.length() > 1e-6) {
+                    bar = bar.append(Component.text("  ·  ", NamedTextColor.DARK_GRAY)).append(Texts.get(l, "hud.wind",
+                            Texts.arg("arrow", arrow(p, push))));
                 }
                 if (f.practice) {
                     bar = bar.append(Component.text("  ·  ", NamedTextColor.DARK_GRAY)).append(Texts.get(l, "hud.practice"));
@@ -820,7 +1003,7 @@ public final class Flights {
         }
         // Wegweiser: Funken am Rand des nächsten Rings (nur für diesen Spieler)
         if (next != null && tick % 4 == 0 && f.state != Flight.State.FROZEN) {
-            pl.tint().highlight(p, next, tick);
+            pl.tint().highlight(p, next, tick, flightTime(f));
         }
         // Geist der Bestzeit: ein kleiner Adler aus blauen Funken fliegt den besten Weg mit
         if (f.ghost != null && f.state == Flight.State.FLYING && f.clock != null) {
@@ -839,6 +1022,16 @@ public final class Flights {
                 }
             }
         }
+    }
+
+    /** Takt-Tor: offen (noch wie lange) oder zu (wie lange noch). */
+    private static Component gateState(Ring r, double time, String l) {
+        var g = r.gate();
+        if (g.open(time)) {
+            double left = Math.max(0, g.open() - g.phase(time));
+            return Texts.get(l, "hud.gate.open", Texts.arg("time", TimeFormat.seconds(Math.round(left * 50), l)));
+        }
+        return Texts.get(l, "hud.gate.shut", Texts.arg("time", TimeFormat.seconds(Math.round(g.untilOpen(time) * 50), l)));
     }
 
     /** Pfeil zur Richtung des nächsten Rings, aus Sicht des Spielers (↑ geradeaus, ← links …). */
@@ -869,14 +1062,15 @@ public final class Flights {
     private void guideStep(Player p, Flight f) {
         Course c = f.course;
         int t = f.guide;
-        if (t >= c.pathTicks() - 1 || f.next > f.guideUntil) {
+        int ticks = f.guideBonus ? c.bonusPathTicks() : c.pathTicks();
+        if (t >= ticks - 1 || f.next > f.guideUntil) {
             f.guide = -1;
-            Vec v = c.pathAt(c.pathTicks() - 1).sub(c.pathAt(c.pathTicks() - 2));
+            Vec v = way(c, f, ticks - 1).sub(way(c, f, ticks - 2));
             p.setGliding(true);
             p.setVelocity(new Vector(v.x(), v.y(), v.z()));
             return;
         }
-        Vec at = c.pathAt(t);
+        Vec at = way(c, f, t);
         if (f.guideMiss >= 0 && f.guideMiss < c.ringCount()) {
             Ring r = c.rings.get(f.guideMiss);
             double d = at.distance(r.center());
@@ -885,14 +1079,18 @@ public final class Flights {
                 at = at.add(u.mul((r.radius() + 6) * Math.max(0, 1 - d / (r.radius() + 25)) * 1.6));
             }
         }
-        Vec v = c.pathAt(t + 1).sub(c.pathAt(t));
-        if (f.state != Flight.State.FLYING && t == 0) {
-            p.teleport(new Location(pl.world(), at.x(), at.y(), at.z(), v.yaw(), v.pitch()));
-        } else {
-            p.teleport(new Location(pl.world(), at.x(), at.y(), at.z(), v.yaw(), v.pitch()));
-        }
+        Vec v = way(c, f, t + 1).sub(way(c, f, t));
+        p.teleport(new Location(pl.world(), at.x(), at.y(), at.z(), v.yaw(), v.pitch()));
         p.setGliding(true);
+        // Flugzeit = Stelle im Musterflug: bewegte Ringe und Tore stehen so wie beim Bau der Strecke (zum Testen
+        // auch verschoben)
+        f.ringBase = tick - t - f.guideLate;
         f.guide = t + 1;
+    }
+
+    /** Weg des Autopiloten: Musterflug oder der Flug über alle Bonus-Ringe. */
+    private static Vec way(Course c, Flight f, int t) {
+        return f.guideBonus ? c.bonusPathAt(t) : c.pathAt(t);
     }
 
     // =========================================================================================
@@ -967,6 +1165,7 @@ public final class Flights {
                     lane++;
                     takeOff(o, f, 0);
                     f.clock = new RunClock(tick, 0);
+                    f.ringBase = tick;
                     o.showTitle(Title.title(Texts.get(pl.lang(o), "race.go"), Component.empty(), SHORT));
                     o.playSound(o.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 2f);
                 }
