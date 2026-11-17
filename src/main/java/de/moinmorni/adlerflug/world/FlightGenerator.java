@@ -196,7 +196,7 @@ public final class FlightGenerator extends ChunkGenerator {
             fallback = biome("minecraft:meadow", null);
             Set<Biome> used = new LinkedHashSet<>();
             used.add(fallback);
-            for (Course c : model.courses()) {
+            for (Course c : model.everyLayout()) {
                 Biome b = biome(c.biome, fallback);
                 used.add(b);
                 biomes.add(b);

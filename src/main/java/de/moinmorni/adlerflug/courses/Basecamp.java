@@ -51,9 +51,9 @@ public final class Basecamp {
         return new double[] {0.5, Y + 6.4, 0.5};
     }
 
-    /** Begrüßung am Fuß der Treppe zur Schanze. */
+    /** Begrüßung vor der Treppe zur Schanze (über dem Platz, nicht über den Stufen). */
     public double[] welcomeBoard() {
-        return new double[] {0.5, Y + 4.2, 15.5};
+        return new double[] {0.5, Y + 3.6, 11.5};
     }
 
     /** Schild „Freiflug-Schanze“ über der Plattform. */
@@ -226,24 +226,7 @@ public final class Basecamp {
 
     private void jumpTower(Plan p, Terrain t) {
         int top = Y + TOWER;
-        // Treppe vom Platz hinauf (z 15 … 27), 5 breit
-        for (int s = 0; s < TOWER; s++) {
-            int z = 16 + s;
-            int y = Y + 1 + s;
-            for (int x = -2; x <= 2; x++) {
-                p.set(x, y, z, "spruce_stairs[facing=north]");
-                for (int below = Y + 1; below < y; below++) {
-                    p.setIfEmpty(x, below, z, Math.abs(x) == 2 ? Blk.of("stripped_spruce_log[axis=y]") : Blk.AIR);
-                }
-                p.set(x, y + 1, z, Blk.AIR);
-                p.set(x, y + 2, z, Blk.AIR);
-                p.set(x, y + 3, z, Blk.AIR);
-            }
-            p.set(-3, y + 1, z, "spruce_fence");
-            p.set(3, y + 1, z, "spruce_fence");
-            p.set(-3, y, z, "spruce_planks");
-            p.set(3, y, z, "spruce_planks");
-        }
+        stairs(p);
         // Plattform (z 28 … 32)
         for (int z = 28; z <= TOWER_Z + 2; z++) {
             for (int x = -3; x <= 3; x++) {
@@ -291,6 +274,65 @@ public final class Basecamp {
         // Fahnen am Kopf der Schanze
         Scenery.flagPole(p, -4, top + 1, 28, 6, "white_wool");
         Scenery.flagPole(p, 4, top + 1, 28, 6, "light_blue_wool");
+    }
+
+    /**
+     * Treppe vom Platz zur Freiflug-Schanze: zwei Läufe mit je sechs Stufen (nach Süden ansteigend, z 14 … 19 und
+     * 22 … 27) und dazwischen ein Absatz (z 20/21). Seitlich dunkle Wangen mit Geländer, Antrittspfosten mit Laternen
+     * unten, Laternen am Absatz und oben, darunter Stützen bis auf den Platz.
+     */
+    private void stairs(Plan p) {
+        int firstZ = 14;
+        int landingZ = 20;
+        int secondZ = 22;
+        int steps = TOWER / 2;
+        for (int s = 0; s < TOWER; s++) {
+            int z = s < steps ? firstZ + s : secondZ + s - steps;
+            int y = Y + 1 + s;
+            for (int x = -2; x <= 2; x++) {
+                p.set(x, y, z, "spruce_stairs[facing=south]");
+                for (int a = 1; a <= 4; a++) {
+                    p.set(x, y + a, z, Blk.AIR);
+                }
+            }
+            for (int x : new int[] {-3, 3}) {
+                p.set(x, y, z, "dark_oak_stairs[facing=south]");
+                p.set(x, y + 1, z, "dark_oak_fence");
+            }
+        }
+        // Absatz in halber Höhe: Dielen, Läufer in der Mitte, Geländer an beiden Seiten
+        int landingY = Y + steps;
+        for (int z = landingZ; z < secondZ; z++) {
+            for (int x = -3; x <= 3; x++) {
+                p.set(x, landingY, z, Math.abs(x) == 3 ? "stripped_dark_oak_wood[axis=y]" : "spruce_planks");
+                for (int a = 1; a <= 4; a++) {
+                    p.set(x, landingY + a, z, Blk.AIR);
+                }
+            }
+            p.set(0, landingY + 1, z, Blk.deco("light_blue_carpet"));
+            for (int x : new int[] {-3, 3}) {
+                p.set(x, landingY + 1, z, "dark_oak_fence");
+            }
+        }
+        // Stützen bis auf den Platz: unter dem Absatz und unter beiden Läufen
+        int[][] posts = {{firstZ + 3, Y + 4}, {landingZ + 1, landingY}, {secondZ + 2, Y + steps + 3},
+            {secondZ + 5, Y + TOWER}};
+        for (int[] post : posts) {
+            for (int x : new int[] {-3, 3}) {
+                for (int y = Y + 1; y < post[1]; y++) {
+                    p.set(x, y, post[0], "stripped_dark_oak_log[axis=y]");
+                }
+            }
+        }
+        // Antrittspfosten mit Laternen vor der ersten Stufe
+        for (int x : new int[] {-3, 3}) {
+            p.set(x, Y + 1, firstZ - 1, "stripped_dark_oak_log[axis=y]");
+            p.set(x, Y + 2, firstZ - 1, "dark_oak_fence");
+            p.set(x, Y + 3, firstZ - 1, "lantern");
+            // Laterne an der Ecke des Absatzes und oben am Ende der Treppe
+            p.set(x, landingY + 2, secondZ - 1, "lantern");
+            p.set(x, Y + TOWER + 2, secondZ + steps - 1, "lantern");
+        }
     }
 
     // ---------- Schmuck ----------

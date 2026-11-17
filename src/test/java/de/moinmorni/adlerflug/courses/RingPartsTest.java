@@ -56,4 +56,27 @@ class RingPartsTest {
             assertTrue(!id.equals("chain") && !id.equals("grass") && id.matches("[a-z_]+"), id);
         }
     }
+
+    /** Takt-Tor: zu sind die Flügel über der ganzen Öffnung, offen ganz außerhalb des Bereichs, der zählt. */
+    @Test
+    void gateWingsCloseTheOpeningAndClearItWhenOpen() {
+        Ring r = new Ring(0, new Vec(0, 100, 0), new Vec(1, 0, 0), 4, Ring.Kind.NORMAL, 0, 0);
+        List<Scenery.RingPart> shut = Scenery.gateWings(r, 0);
+        assertEquals(4, shut.size());
+        double covered = 0;
+        for (Scenery.RingPart p : shut) {
+            double inner = Math.abs(p.at().dot(r.across())) - p.length() / 2;
+            double outer = Math.abs(p.at().dot(r.across())) + p.length() / 2;
+            assertTrue(inner >= -1e-9, "Flügel überlappen sich nicht");
+            covered = Math.max(covered, outer);
+            assertTrue(p.thick() >= 2 * r.radius(), "Flügel so hoch wie die Öffnung");
+            assertEquals(0, p.at().dot(r.normal()), 1e-9);
+            Blocks.known(p.block());
+        }
+        assertTrue(covered >= r.radius() + 1, "zu deckt die ganze Öffnung");
+        for (Scenery.RingPart p : Scenery.gateWings(r, r.hitRadius())) {
+            double inner = Math.abs(p.at().dot(r.across())) - p.length() / 2;
+            assertTrue(inner >= r.hitRadius() - 1e-9, "offen liegt kein Flügel im Weg");
+        }
+    }
 }

@@ -6,11 +6,13 @@ import de.moinmorni.adlerflug.course.Course;
 import de.moinmorni.adlerflug.course.Medal;
 import de.moinmorni.adlerflug.course.Pilots;
 import de.moinmorni.adlerflug.courses.Basecamp;
+import de.moinmorni.adlerflug.courses.Daily;
 import de.moinmorni.adlerflug.courses.World;
 import de.moinmorni.adlerflug.data.Store;
 import de.moinmorni.adlerflug.flight.FlightSim;
 import de.moinmorni.adlerflug.flight.Updraft;
 import de.moinmorni.adlerflug.flight.Vec;
+import de.moinmorni.adlerflug.flight.Wind;
 import de.moinmorni.adlerflug.game.Boards;
 import de.moinmorni.adlerflug.game.Controls;
 import de.moinmorni.adlerflug.game.Flights;
@@ -32,9 +34,13 @@ import io.papermc.paper.event.player.AsyncPlayerSpawnLocationEvent;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import net.kyori.adventure.text.Component;
@@ -46,6 +52,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Particle;
+import org.bukkit.WeatherType;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -62,8 +69,9 @@ import org.bukkit.scoreboard.Team;
 import org.bukkit.util.Vector;
 
 /**
- * Adlerflug – Flug-Modus des MoinMorni-Netzwerks. Baut beim Start seine eigene Welt (Basislager + sechs Strecken in den
- * Bergen), misst Flugzeiten, führt Bestenlisten und meldet Statistik und Zustand ans Netzwerk. Läuft auch allein.
+ * Adlerflug – Flug-Modus des MoinMorni-Netzwerks. Baut beim Start seine eigene Welt (Basislager, acht Strecken in den
+ * Bergen und das Tal der Strecke des Tages), misst Flugzeiten, führt Bestenlisten und meldet Statistik und Zustand ans
+ * Netzwerk. Die Strecke des Tages entsteht jeden Tag neu aus dem Datum (für alle gleich). Läuft auch allein.
  */
 public final class AdlerflugPlugin extends JavaPlugin implements Listener {
 
@@ -76,12 +84,14 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         public int raceWait = 15;
         public boolean ghostDefault = true;
         public boolean freeFlight = true;
+        public boolean daily = true;
     }
 
     private static final String NO_COLLISION = "adler_nocoll";
     private static final Title.Times WELCOME = Title.Times.times(Duration.ofMillis(300), Duration.ofMillis(3500),
             Duration.ofMillis(900));
     private static final Particle.DustOptions LIFT = new Particle.DustOptions(Color.fromRGB(255, 250, 235), 1.4f);
+    private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
 
     private final Settings settings = new Settings();
     private World model;
@@ -100,6 +110,14 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
     private Course weekly;
     private String lastState = "";
     private long lastStateAt;
+    private Boards boards;
+    /** Strecke des Tages (null, solange sie noch gerechnet wird). */
+    private volatile Daily.Today daily;
+    private String dailyBuilding = "";
+    /** Nur für Tests ({@code /adleradmin tag}): anderer Tag für die Strecke des Tages. */
+    private LocalDate forcedDay;
+    /** Stellen in den Windzonen (auf dem Musterflug), an denen Schlieren ziehen: x, y, z, Wind x, Wind z. */
+    private final List<double[]> windSpots = new ArrayList<>();
 
     @Override
     public void onEnable() {
@@ -111,6 +129,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         settings.raceWait = Math.max(5, getConfig().getInt("rennen-wartezeit", 15));
         settings.ghostDefault = getConfig().getBoolean("geist-standard", true);
         settings.freeFlight = getConfig().getBoolean("freiflug", true);
+        settings.daily = getConfig().getBoolean("strecke-des-tages", true);
         Items.init(this);
 
         long t = System.currentTimeMillis();
@@ -118,12 +137,18 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         getLogger().info("Modell gebaut: " + model.courses().size() + " Strecken in " + (System.currentTimeMillis() - t)
                 + " ms.");
         for (Course c : model.courses()) {
-            FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.rings, c.updrafts, Pilots.aim(c),
-                    model::solid, 8000);
-            if (!r.finished()) {
-                getLogger().warning("Strecke " + c.id + " ist für den Prüf-Piloten nicht fliegbar: " + r.problem());
-            }
+            windSpots(c);
         }
+        // Gegenprobe im Hintergrund (nur zur Warnung im Protokoll – die Tests prüfen dasselbe vor jedem Release)
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            for (Course c : model.courses()) {
+                FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), Pilots.aim(c),
+                        model::solid, 8000);
+                if (!r.finished()) {
+                    getLogger().warning("Strecke " + c.id + " ist für den Prüf-Piloten nicht fliegbar: " + r.problem());
+                }
+            }
+        });
         worlds = new Construction(this, model, settings.world);
         try {
             worlds.setup();
@@ -133,7 +158,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
             return;
         }
         net = Network.connect(this);
-        store = new Store(getDataFolder().toPath(), getLogger(), model.courses());
+        store = new Store(getDataFolder().toPath(), getLogger(), model.courses(), Daily.ID);
         store.ghostDefault(settings.ghostDefault);
         try {
             store.load();
@@ -142,19 +167,21 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         }
         rollWeek();
 
-        tint = new RingTint(this, model.courses());
+        tint = new RingTint(this, model.courses(), () -> flights == null ? 0 : flights.tick());
         hotbar = new Hotbar(this);
         menus = new Menus(this);
         flights = new Flights(this);
         controls = new Controls(this);
         holos = new Holograms(this, worlds.world(), this::langOf);
-        new Boards(this).register(holos);
+        boards = new Boards(this);
+        boards.register(holos);
         keepBasecampLoaded();
         holos.start();
         tint.start(worlds.world());
         new Critters(this, worlds.world(), model.critters()).start();
         flights.start();
         worlds.warmUp(60);
+        rollDay();
 
         var pm = getServer().getPluginManager();
         pm.registerEvents(this, this);
@@ -240,6 +267,31 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         return tint;
     }
 
+    /** Strecke des Tages (null, solange sie noch gerechnet wird). */
+    public Daily.Today daily() {
+        return daily;
+    }
+
+    /** Alle Strecken, die man gerade fliegen kann: die acht festen und (wenn fertig) die Strecke des Tages. */
+    public List<Course> courses() {
+        Daily.Today d = daily;
+        if (d == null) {
+            return model.courses();
+        }
+        List<Course> out = new ArrayList<>(model.courses());
+        out.add(d.course());
+        return out;
+    }
+
+    /** Strecke nach Kennung (auch „tagesflug“ für die Strecke des Tages). */
+    public Optional<Course> course(String id) {
+        Daily.Today d = daily;
+        if (d != null && Daily.ID.equals(id)) {
+            return Optional.of(d.course());
+        }
+        return model.course(id);
+    }
+
     public String lang(Player p) {
         return net == null ? "de" : net.language(p);
     }
@@ -268,7 +320,129 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         p.setVelocity(new Vector());
         p.setFallDistance(0);
         p.teleport(spawn());
+        dayLook(p, null);
         hotbar.base(p);
+    }
+
+    // =========================================================================================
+    // Strecke des Tages
+    // =========================================================================================
+
+    /** Heutiger Tag (deutsche Zeit) – oder der für Tests gesetzte. */
+    public LocalDate today() {
+        return forcedDay != null ? forcedDay : LocalDate.ofInstant(now(), BERLIN);
+    }
+
+    /** Nur für Tests: Strecke des Tages für einen anderen Tag (null = wieder heute). */
+    public void forceDay(LocalDate day) {
+        forcedDay = day;
+        rollDay();
+    }
+
+    /** Neuer Tag? Dann die Strecke des Tages im Hintergrund neu rechnen (dauert etwa eine Sekunde). */
+    private void rollDay() {
+        if (!settings.daily) {
+            return;
+        }
+        LocalDate day = today();
+        String id = day.toString();
+        Daily.Today d = daily;
+        if ((d != null && id.equals(d.course().day)) || id.equals(dailyBuilding)) {
+            return;
+        }
+        dailyBuilding = id;
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            long t = System.currentTimeMillis();
+            try {
+                Daily.Today next = model.daily(Daily.conditions(day));
+                long took = System.currentTimeMillis() - t;
+                Bukkit.getScheduler().runTask(this, () -> installDaily(next, took));
+            } catch (RuntimeException e) {
+                getLogger().severe("Strecke des Tages " + id + " ließ sich nicht bauen: " + e);
+            }
+        });
+    }
+
+    private void installDaily(Daily.Today next, long took) {
+        if (!next.course().day.equals(dailyBuilding)) {
+            return; // inzwischen ein anderer Tag bestellt
+        }
+        Daily.Today old = daily;
+        if (old != null) {
+            // Wer noch die Strecke von gestern fliegt, landet im Adlerhorst (ihre Ringe gibt es nicht mehr)
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                Course c = flights.courseOf(p.getUniqueId());
+                if (c != null && c.daily()) {
+                    flights.abandon(p);
+                    toBasecamp(p);
+                    p.sendMessage(Texts.chat(lang(p), "daily.new"));
+                }
+            }
+            tint.remove(Daily.ID);
+            boards.unregisterCourse(holos, Daily.ID);
+        }
+        daily = next;
+        store.setDay(next.conditions().id());
+        tint.add(next.course());
+        boards.registerCourse(holos, next.course());
+        holos.spawnLoaded();
+        holos.refresh("board:" + Daily.ID);
+        holos.refresh("weekly");
+        Daily.Conditions k = next.conditions();
+        getLogger().info("Strecke des Tages bereit (" + k.id() + ", " + k.layout().de + ", " + k.windText("de") + ", "
+                + k.time().de + ", " + k.weather().de + ", " + next.course().ringCount() + " Ringe, Bonus "
+                + next.course().bonus.size() + ") in " + took + " ms.");
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (!flights.flying(p.getUniqueId())) {
+                hotbar.base(p);
+            }
+        }
+    }
+
+    /** Wer die Strecke des Tages fliegt, sieht ihre Tageszeit und ihr Wetter; sonst gilt wieder das der Welt. */
+    public void dayLook(Player p, Course c) {
+        Daily.Today d = daily;
+        if (c != null && c.daily() && d != null) {
+            p.setPlayerTime(d.conditions().time().ticks, false);
+            p.setPlayerWeather(d.conditions().weather() == Daily.Weather.REGEN ? WeatherType.DOWNFALL : WeatherType.CLEAR);
+        } else {
+            p.resetPlayerTime();
+            p.resetPlayerWeather();
+        }
+    }
+
+    /** Die Bedingungen des Tages als Text („16.11.2026 · gespiegelt · frischer Wind aus Westen ← · Abendrot …“). */
+    public Component dailyText(String l) {
+        Daily.Today d = daily;
+        if (d == null) {
+            return Texts.get(l, settings.daily ? "daily.building" : "daily.off");
+        }
+        Daily.Conditions k = d.conditions();
+        Course c = d.course();
+        List<String> parts = new ArrayList<>();
+        parts.add("<white>" + k.date(l) + "</white>");
+        parts.add(Texts.raw(l, "daily.layout." + k.layout().name().toLowerCase(java.util.Locale.ROOT)));
+        parts.add("<aqua>" + k.windText(l) + (k.windLevel() > 0 ? " " + k.windArrow() : "") + "</aqua>");
+        parts.add("<gold>" + k.time().name(l) + "</gold>");
+        parts.add(k.weather() == Daily.Weather.REGEN ? "<blue>" + k.weather().name(l) + "</blue>"
+                : k.weather().name(l));
+        if (k.radius() < 4.0) {
+            parts.add(Texts.raw(l, "daily.small"));
+        }
+        parts.add(Flights.extrasText(c, l));
+        return Texts.MM.deserialize("<gray>" + String.join("<dark_gray> · </dark_gray>", parts) + "</gray>");
+    }
+
+    /** Stellen für Schlieren: Punkte des Musterflugs in Windzonen. */
+    private void windSpots(Course c) {
+        for (Wind w : c.winds) {
+            for (int t = 0; t < c.pathTicks(); t += 6) {
+                Vec p = c.pathAt(t);
+                if (w.contains(Course.center(p))) {
+                    windSpots.add(new double[] {p.x(), p.y(), p.z(), w.push().x(), w.push().z(), w.radius()});
+                }
+            }
+        }
     }
 
     /** Ins Nichts gefallen (ohne laufenden Flug): zurück ins Basislager. */
@@ -435,6 +609,9 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
                 p.sendMessage(Texts.chat(l, "welcome.weekly", Texts.comp("course", Flights.courseName(weekly, l)),
                         Texts.comp("badge", Texts.get(l, "badge"))));
             }
+            if (daily != null) {
+                p.sendMessage(Texts.chat(l, "welcome.daily", Texts.comp("conditions", dailyText(l))));
+            }
         }, 30L);
     }
 
@@ -499,6 +676,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
         if (!WeeklyRotation.weekId(now()).equals(store.weekId())) {
             rollWeek();
         }
+        rollDay();
         Basecamp camp = model.basecamp();
         for (Player p : Bukkit.getOnlinePlayers()) {
             String l = lang(p);
@@ -535,7 +713,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
 
     /** Auf einem Landeplatz einer Strecke (nach dem Ziel) darf man stehen bleiben. */
     private boolean nearLanding(Location at) {
-        for (Course c : model.courses()) {
+        for (Course c : courses()) {
             Vec l = c.landing.at();
             if (Math.abs(at.getX() - l.x()) < 12 && Math.abs(at.getZ() - l.z()) < 12 && Math.abs(at.getY() - l.y()) < 8) {
                 return true;
@@ -567,6 +745,7 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
                 p.setGliding(true);
             }
             Location at = p.getLocation();
+            windStreaks(p, at, r);
             for (Updraft u : model.updrafts()) {
                 double d = Math.hypot(at.getX() - u.x(), at.getZ() - u.z());
                 if (d > 140) {
@@ -586,6 +765,39 @@ public final class AdlerflugPlugin extends JavaPlugin implements Listener {
                     p.spawnParticle(Particle.CLOUD, u.x() + Math.cos(a) * rad, ground + 2 + r.nextDouble() * 6,
                             u.z() + Math.sin(a) * rad, 0, 0, 0.6, 0, 0.5);
                 }
+            }
+        }
+    }
+
+    /**
+     * Wind sichtbar machen: Schlieren ziehen in den Windzonen in Windrichtung (für alle in der Nähe); wer die Strecke
+     * des Tages bei Wind fliegt, sieht sie rund um sich.
+     */
+    private void windStreaks(Player p, Location at, ThreadLocalRandom r) {
+        for (double[] w : windSpots) {
+            if (Math.abs(at.getX() - w[0]) > 120 || Math.abs(at.getZ() - w[2]) > 120 || r.nextInt(3) != 0) {
+                continue;
+            }
+            double len = Math.max(1e-6, Math.hypot(w[3], w[4]));
+            double dx = w[3] / len;
+            double dz = w[4] / len;
+            double ox = (r.nextDouble() * 2 - 1) * w[5] * 0.8;
+            double oz = (r.nextDouble() * 2 - 1) * w[5] * 0.8;
+            double oy = (r.nextDouble() * 2 - 1) * 5;
+            p.spawnParticle(Particle.CLOUD, w[0] + ox, w[1] + oy, w[2] + oz, 0, dx, 0, dz, 0.45);
+            if (r.nextInt(6) == 0) {
+                p.spawnParticle(Particle.SMALL_GUST, w[0] + ox, w[1] + oy, w[2] + oz, 1, 0, 0, 0, 0);
+            }
+        }
+        Course c = flights.courseOf(p.getUniqueId());
+        Daily.Today d = daily;
+        if (c != null && c.daily() && d != null && d.conditions().windLevel() > 0) {
+            Vec wind = d.conditions().wind().normalize();
+            for (int i = 0; i < d.conditions().windLevel() * 2; i++) {
+                double ox = (r.nextDouble() * 2 - 1) * 10;
+                double oz = (r.nextDouble() * 2 - 1) * 10;
+                p.spawnParticle(Particle.CLOUD, at.getX() + ox - wind.x() * 6, at.getY() + (r.nextDouble() * 2 - 1) * 4,
+                        at.getZ() + oz - wind.z() * 6, 0, wind.x(), 0, wind.z(), 0.5);
             }
         }
     }

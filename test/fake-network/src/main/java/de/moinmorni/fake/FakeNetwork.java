@@ -24,7 +24,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /**
  * Test-Ersatz für das Netzwerk-Plugin: stellt die Schnittstelle {@link MoinMorni} bereit. Sprache und Partys kommen
  * aus {@code plugins/MoinMorni/fake.properties} (bei jedem Aufruf neu gelesen), alle Meldungen (Statistik, Zustand,
- * Lobby) landen als JSON-Zeilen in {@code plugins/MoinMorni/calls.log}.
+ * Lobby, Nachfrage vor der Lobby, „spielt gerade“) landen als JSON-Zeilen in {@code plugins/MoinMorni/calls.log}.
  *
  * <pre>
  * lang.Bert=en
@@ -32,6 +32,9 @@ import org.bukkit.plugin.java.JavaPlugin;
  * </pre>
  */
 public final class FakeNetwork extends JavaPlugin implements MoinMorni {
+
+    /** Wer gerade spielt (fragt dann vor der Lobby nach). */
+    private final java.util.Set<UUID> playing = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @Override
     public void onEnable() {
@@ -149,5 +152,32 @@ public final class FakeNetwork extends JavaPlugin implements MoinMorni {
     public void toLobby(Player player) {
         log("{\"t\":\"to-lobby\",\"name\":\"" + player.getName() + "\"}");
         player.kick(Component.text("Test-Netzwerk: ab in die Lobby"));
+    }
+
+    @Override
+    public void askToLobby(Player player) {
+        boolean asks = playing.contains(player.getUniqueId());
+        log("{\"t\":\"ask-lobby\",\"name\":\"" + player.getName() + "\",\"asked\":" + asks + "}");
+        if (asks) {
+            player.sendMessage(Component.text("Test-Netzwerk: Willst du wirklich zur Lobby? (Nachfrage)"));
+        } else {
+            player.kick(Component.text("Test-Netzwerk: ab in die Lobby"));
+        }
+    }
+
+    @Override
+    public void playing(Player player, boolean on) {
+        if (on) {
+            playing.add(player.getUniqueId());
+        } else {
+            playing.remove(player.getUniqueId());
+        }
+        log("{\"t\":\"playing\",\"name\":\"" + player.getName() + "\",\"playing\":" + on + "}");
+    }
+
+    @Override
+    public void holdSlot(UUID player, int seconds) {
+        log("{\"t\":\"hold-slot\",\"name\":\"" + nameOf(player) + "\",\"uuid\":\"" + player + "\",\"seconds\":"
+                + seconds + "}");
     }
 }

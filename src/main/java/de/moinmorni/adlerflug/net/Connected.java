@@ -5,20 +5,29 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Logger;
 import org.bukkit.entity.Player;
 
 /**
  * Adlerflug im Netzwerk: alles über die Schnittstelle des Netzwerk-Plugins. Die Schnittstelle wird bei jedem Aufruf neu
  * geholt – lädt jemand das Netzwerk-Plugin neu, stimmt sie trotzdem.
+ *
+ * <p>Nachfrage vor der Lobby und „fliegt gerade“ gibt es erst ab Version 2 der Schnittstelle. Ein älteres
+ * Netzwerk-Plugin kennt sie nicht ({@link LinkageError}): dann geht „zur Lobby“ sofort, der Rest entfällt – alles
+ * andere läuft wie bisher.
  */
 final class Connected implements Network {
 
-    private Connected() {
+    private final Logger log;
+    private volatile boolean olderNetwork;
+
+    private Connected(Logger log) {
+        this.log = log;
     }
 
     /** null, wenn das Netzwerk-Plugin keine Schnittstelle anbietet. */
-    static Network create() {
-        return MoinMorni.get().isPresent() ? new Connected() : null;
+    static Network create(Logger log) {
+        return MoinMorni.get().isPresent() ? new Connected(log) : null;
     }
 
     private static Optional<MoinMorni> api() {
@@ -50,6 +59,47 @@ final class Connected implements Network {
     @Override
     public void toLobby(Player player) {
         api().ifPresentOrElse(a -> a.toLobby(player), () -> player.kick(Standalone.KICK));
+    }
+
+    @Override
+    public void askToLobby(Player player) {
+        Optional<MoinMorni> api = api();
+        if (api.isEmpty()) {
+            player.kick(Standalone.KICK);
+            return;
+        }
+        if (!olderNetwork) {
+            try {
+                api.get().askToLobby(player);
+                return;
+            } catch (LinkageError e) {
+                older(e);
+            }
+        }
+        api.get().toLobby(player);
+    }
+
+    @Override
+    public void playing(Player player, boolean playing) {
+        if (olderNetwork) {
+            return;
+        }
+        api().ifPresent(a -> {
+            try {
+                a.playing(player, playing);
+            } catch (LinkageError e) {
+                older(e);
+            }
+        });
+    }
+
+    /** Älteres Netzwerk-Plugin (Schnittstelle 1): einmal melden, danach die neuen Methoden nicht mehr versuchen. */
+    private void older(LinkageError e) {
+        if (!olderNetwork) {
+            olderNetwork = true;
+            log.warning("Das Netzwerk-Plugin ist älter (" + e + "): keine Nachfrage vor der Lobby – alles andere läuft "
+                    + "wie bisher.");
+        }
     }
 
     @Override

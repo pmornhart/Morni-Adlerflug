@@ -36,6 +36,15 @@ public interface Network {
     /** Zurück in die Lobby (ohne Netzwerk: Verbindung trennen mit Hinweis). */
     void toLobby(Player player);
 
+    /**
+     * Der Spieler will selbst in die Lobby (Gegenstand, {@code /adlerflug lobby}): Fliegt er gerade, fragt das Netzwerk
+     * erst nach; sonst geht es sofort. Ohne Netzwerk wie {@link #toLobby}.
+     */
+    void askToLobby(Player player);
+
+    /** Fliegt der Spieler gerade eine Strecke (Zeit läuft)? Das Netzwerk fragt dann vor „/lobby“ nach. */
+    void playing(Player player, boolean playing);
+
     /** Party des Spielers (leer ohne Party oder ohne Netzwerk). Kommt auf irgendeinem Thread zurück. */
     CompletableFuture<Optional<Party>> party(UUID player);
 
@@ -48,7 +57,7 @@ public interface Network {
         Logger log = plugin.getLogger();
         if (plugin.getServer().getPluginManager().getPlugin("MoinMorni") != null) {
             try {
-                Network n = Connected.create();
+                Network n = Connected.create(log);
                 if (n != null) {
                     log.info("Mit dem MoinMorni-Netzwerk verbunden.");
                     return n;

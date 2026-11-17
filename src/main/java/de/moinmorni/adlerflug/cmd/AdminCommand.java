@@ -28,7 +28,8 @@ import org.bukkit.entity.Player;
  */
 public final class AdminCommand implements TabExecutor {
 
-    private static final List<String> SUBS = List.of("status", "start", "fliege", "strecke", "stationen", "reset", "neubau", "pruefen");
+    private static final List<String> SUBS = List.of("status", "start", "fliege", "strecke", "stationen", "reset", "neubau",
+            "pruefen", "tag");
 
     private final AdlerflugPlugin pl;
 
@@ -49,7 +50,7 @@ public final class AdminCommand implements TabExecutor {
             case "fliege" -> guide(sender, l, args);
             case "start" -> {
                 Player p = args.length > 2 ? Bukkit.getPlayerExact(args[1]) : null;
-                Optional<Course> c = args.length > 2 ? pl.model().course(args[2]) : Optional.empty();
+                Optional<Course> c = args.length > 2 ? pl.course(args[2]) : Optional.empty();
                 if (p == null || c.isEmpty()) {
                     sender.sendMessage(Component.text("/adleradmin start <spieler> <strecke>"));
                 } else {
@@ -58,10 +59,10 @@ public final class AdminCommand implements TabExecutor {
                 }
             }
             case "strecke" -> {
-                Optional<Course> c = args.length > 1 ? pl.model().course(args[1]) : Optional.empty();
+                Optional<Course> c = args.length > 1 ? pl.course(args[1]) : Optional.empty();
                 if (c.isEmpty()) {
                     sender.sendMessage(Texts.chat(l, "cmd.course", Texts.arg("list",
-                            String.join(", ", pl.model().courses().stream().map(x -> x.id).toList()))));
+                            String.join(", ", pl.courses().stream().map(x -> x.id).toList()))));
                 } else {
                     sender.sendMessage(Component.text(json(c.get())));
                 }
@@ -76,6 +77,7 @@ public final class AdminCommand implements TabExecutor {
                 sender.sendMessage(Component.text(b.append(']').toString()));
             }
             case "reset" -> reset(sender, l, args);
+            case "tag" -> day(sender, args);
             case "neubau" -> {
                 try {
                     pl.worlds().scheduleRebuild();
@@ -86,16 +88,43 @@ public final class AdminCommand implements TabExecutor {
             }
             case "pruefen" -> {
                 List<String> out = new ArrayList<>();
-                for (Course c : pl.model().courses()) {
-                    FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.rings, c.updrafts,
-                            Pilots.aim(c), pl.model()::solid, 8000);
-                    out.add(c.id + ": " + (r.finished() ? "ok " + r.finishMs() + " ms" : r.problem()));
+                for (Course c : pl.courses()) {
+                    FlightSim.Result r = FlightSim.fly(c.start.line(), c.start.launch(), c.air(), Pilots.aim(c),
+                            pl.model()::solid, 8000);
+                    out.add(c.id + ": " + (r.finished() ? "ok " + r.scoreMs() + " ms" : r.problem()));
                 }
                 sender.sendMessage(Component.text(String.join("\n", out)));
             }
             default -> sender.sendMessage(Component.text("/adleradmin " + String.join("|", SUBS)));
         }
         return true;
+    }
+
+    /**
+     * {@code /adleradmin tag [jjjj-mm-tt|heute]} – Strecke des Tages für einen anderen Tag rechnen (nur zum Testen;
+     * ohne Angabe: was heute gilt, als JSON).
+     */
+    private void day(CommandSender sender, String[] args) {
+        if (args.length > 1) {
+            try {
+                pl.forceDay("heute".equalsIgnoreCase(args[1]) ? null : java.time.LocalDate.parse(args[1]));
+                sender.sendMessage(Component.text("Strecke des Tages wird für " + pl.today() + " gerechnet."));
+            } catch (java.time.format.DateTimeParseException e) {
+                sender.sendMessage(Component.text("/adleradmin tag <jjjj-mm-tt|heute>"));
+            }
+            return;
+        }
+        var d = pl.daily();
+        if (d == null) {
+            sender.sendMessage(Component.text("{\"ready\":false}"));
+            return;
+        }
+        var k = d.conditions();
+        sender.sendMessage(Component.text(String.format(Locale.ROOT, "{\"ready\":true,\"day\":\"%s\",\"layout\":\"%s\","
+                + "\"wind\":%d,\"windDir\":%d,\"time\":\"%s\",\"weather\":\"%s\",\"radius\":%.1f,\"moving\":%d,"
+                + "\"gate\":%b,\"bonus\":%d,\"rings\":%d}", k.id(), k.layout(), k.windLevel(), k.windDir(), k.time(),
+                k.weather(), k.radius(), k.moving().size(), k.gate() >= 0, d.course().bonus.size(),
+                d.course().ringCount())));
     }
 
     /** Eine Zeile je Spieler: name=… state=… (für Tests). */
@@ -112,10 +141,14 @@ public final class AdminCommand implements TabExecutor {
         sender.sendMessage(Component.text(String.join("\n", lines)));
     }
 
-    /** {@code /adleradmin fliege <spieler> [bis <ring>] [daneben <ring>]} – Ringe ab 1 gezählt. */
+    /**
+     * {@code /adleradmin fliege <spieler> [bis <ring>] [daneben <ring>] [takt <ticks>] [bonus]} – Ringe ab 1 gezählt;
+     * {@code takt} verschiebt die Flugzeit (bewegte Ringe und Tore laufen so viele Ticks voraus, z. B. Tor zu).
+     */
     private void guide(CommandSender sender, String l, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(Component.text("/adleradmin fliege <spieler> [bis <ring>] [daneben <ring>]"));
+            sender.sendMessage(Component.text("/adleradmin fliege <spieler> [bis <ring>] [daneben <ring>] [takt <ticks>] "
+                    + "[bonus]"));
             return;
         }
         Player p = Bukkit.getPlayerExact(args[1]);
@@ -125,20 +158,32 @@ public final class AdminCommand implements TabExecutor {
         }
         int until = -1;
         int miss = -1;
-        for (int i = 2; i + 1 < args.length; i += 2) {
+        int late = 0;
+        boolean bonus = false;
+        for (int i = 2; i < args.length; i++) {
+            if (args[i].equalsIgnoreCase("bonus")) {
+                bonus = true;
+                continue;
+            }
+            if (i + 1 >= args.length) {
+                break;
+            }
             try {
                 int n = Integer.parseInt(args[i + 1]) - 1;
                 if (args[i].equalsIgnoreCase("bis")) {
                     until = n;
                 } else if (args[i].equalsIgnoreCase("daneben")) {
                     miss = n;
+                } else if (args[i].equalsIgnoreCase("takt")) {
+                    late = n + 1;
                 }
             } catch (NumberFormatException e) {
                 sender.sendMessage(Component.text("Zahl erwartet: " + args[i + 1]));
                 return;
             }
+            i++;
         }
-        boolean ok = pl.flights().guide(p, until, miss);
+        boolean ok = pl.flights().guide(p, until, miss, bonus, late);
         sender.sendMessage(Component.text(ok ? "Autopilot für " + p.getName() + " an." : p.getName() + " fliegt keine Strecke."));
     }
 
@@ -150,16 +195,25 @@ public final class AdminCommand implements TabExecutor {
         Vec land = c.landing.at();
         b.append(String.format(Locale.ROOT, "{\"id\":\"%s\",\"name\":\"%s\",\"difficulty\":\"%s\",\"ms\":%d,"
                 + "\"stand\":[%.2f,%.2f,%.2f],\"line\":[%.2f,%.2f,%.2f],\"yaw\":%.1f,\"landing\":[%.2f,%.2f,%.2f],"
-                + "\"floor\":%.1f,\"maxOff\":%.1f,\"medals\":{\"adler\":%d,\"gold\":%d,\"silber\":%d,\"bronze\":%d},",
+                + "\"floor\":%.1f,\"maxOff\":%.1f,\"medals\":{\"steinadler\":%d,\"adler\":%d,\"gold\":%d,"
+                + "\"silber\":%d,\"bronze\":%d},\"bonusTicks\":%d,\"winds\":%d,",
                 c.id, c.nameDe, c.difficulty, c.designMs, s.x(), s.y(), s.z(), line.x(), line.y(), line.z(), c.start.yaw(),
-                land.x(), land.y(), land.z(), c.floorY, c.maxOff, c.medals.adler(), c.medals.gold(), c.medals.silber(),
-                c.medals.bronze()));
+                land.x(), land.y(), land.z(), c.floorY, c.maxOff, c.medals.steinadler(), c.medals.adler(), c.medals.gold(),
+                c.medals.silber(), c.medals.bronze(), c.bonusPath == null ? 0 : c.bonusPathTicks(), c.winds.size()));
         b.append("\"rings\":[");
         for (Ring r : c.rings) {
             b.append(r.index() > 0 ? "," : "").append(String.format(Locale.ROOT,
-                    "{\"i\":%d,\"kind\":\"%s\",\"c\":[%.2f,%.2f,%.2f],\"n\":[%.4f,%.4f,%.4f],\"r\":%.2f,\"tick\":%d}",
+                    "{\"i\":%d,\"kind\":\"%s\",\"c\":[%.2f,%.2f,%.2f],\"n\":[%.4f,%.4f,%.4f],\"r\":%.2f,\"tick\":%d,"
+                    + "\"moving\":%b,\"gate\":%b}",
                     r.index(), r.kind(), r.center().x(), r.center().y(), r.center().z(), r.normal().x(), r.normal().y(),
-                    r.normal().z(), r.radius(), c.tickBefore(r.index(), 0)));
+                    r.normal().z(), r.radius(), c.tickBefore(r.index(), 0), r.motion() != null, r.gate() != null));
+        }
+        b.append("],\"bonus\":[");
+        for (int i = 0; i < c.bonus.size(); i++) {
+            Ring r = c.bonus.get(i);
+            b.append(i > 0 ? "," : "").append(String.format(Locale.ROOT,
+                    "{\"before\":%d,\"c\":[%.2f,%.2f,%.2f],\"ms\":%d}", r.index(), r.center().x(), r.center().y(),
+                    r.center().z(), r.credit()));
         }
         b.append("],\"updrafts\":[");
         for (int i = 0; i < c.updrafts.size(); i++) {
@@ -182,7 +236,7 @@ public final class AdminCommand implements TabExecutor {
         }
         String course = null;
         if (args.length > 2) {
-            Optional<Course> c = pl.model().course(args[2]);
+            Optional<Course> c = pl.course(args[2]);
             if (c.isEmpty()) {
                 sender.sendMessage(Texts.chat(l, "cmd.unknown"));
                 return;
@@ -208,7 +262,7 @@ public final class AdminCommand implements TabExecutor {
         } else if (args.length == 2 && List.of("fliege", "reset", "start").contains(args[0].toLowerCase(Locale.ROOT))) {
             Bukkit.getOnlinePlayers().forEach(p -> out.add(p.getName()));
         } else if (args.length == 2 && "strecke".equalsIgnoreCase(args[0])) {
-            pl.model().courses().forEach(c -> out.add(c.id));
+            pl.courses().forEach(c -> out.add(c.id));
         }
         return out;
     }

@@ -48,6 +48,10 @@ final class Flight {
     int guide = -1;
     int guideUntil = Integer.MAX_VALUE;
     int guideMiss = -1;
+    /** Autopilot fliegt den Weg über alle Bonus-Ringe statt des Musterflugs. */
+    boolean guideBonus;
+    /** Autopilot: Flugzeit um so viele Ticks verschoben (nur zum Testen von Toren). */
+    int guideLate;
     /** Bis zu diesem Tick zeigt die Aktionsleiste die letzte Zwischenzeit statt der Uhr. */
     long splitShownUntil;
     Component splitText;
@@ -57,11 +61,32 @@ final class Flight {
     private int pathLen;
     /** Geist der Bestzeit (x/y/z pro Tick) oder null. */
     float[] ghost;
+    /**
+     * Uhr der bewegten Ringe, Tore und Böen: Flugzeit (Ticks) = Server-Tick − {@code ringBase}. Beim Absprung wie der
+     * Musterflug ab der Kante; nach dem Zurücksetzen auf den Stand des Musterflugs an dieser Stelle.
+     */
+    double ringBase;
+    /** Eingesammelte Bonus-Ringe und die geschenkte Zeit (ms). */
+    final boolean[] bonusGot;
+    long credit;
+    /** Dem Netzwerk gemeldet: fliegt gerade. */
+    boolean playing;
 
     Flight(Course course, boolean practice) {
         this.course = course;
         this.practice = practice;
         this.splits = new long[course.ringCount()];
+        this.bonusGot = new boolean[course.bonus.size()];
+    }
+
+    /** Flugzeit der bewegten Ringe im Tick {@code tick}. */
+    double ringTime(long tick) {
+        return tick - ringBase;
+    }
+
+    /** Laufende Zeit samt Gutschrift der Bonus-Ringe. */
+    long now(long tick) {
+        return clock == null ? 0 : Math.max(0, clock.now(tick) - credit);
     }
 
     void resetProgress() {
@@ -73,6 +98,8 @@ final class Flight {
         splitShownUntil = 0;
         landed = 0;
         ringsThisFlight = 0;
+        credit = 0;
+        Arrays.fill(bonusGot, false);
     }
 
     void record(Vec feet) {

@@ -14,6 +14,9 @@
 #                  damit nichts heruntergeladen werden muss) – optional
 #   ADLER_NODE_MODULES  node_modules mit mineflayer
 #   EXTRA_PLUGINS  weitere Jars für den Server (z. B. ViaVersion + ViaBackwards für einen echten 26.3-Client)
+#   ONLY, TEIL     nur diese Strecken für Bert (z. B. ONLY=klammflug) bzw. TEIL=rest ohne Annas Flüge
+#   XMS, XMX, JAVA_OPTS  Speicher und Java-Optionen des Servers (auf einem knappen Rechner z. B. XMS=256M XMX=1536M
+#                  JAVA_OPTS=-XX:+UseSerialGC)
 #
 # Verfasst mit Claude 🤖
 set -euo pipefail
@@ -91,7 +94,7 @@ done
 echo "== Server starten (Port $PORT, RCON $RCON_PORT)"
 cd "$SERVER"
 : > console.log
-$NICE "$JAVA" -Xms1G -Xmx${XMX:-2G} -jar paper.jar --nogui < /dev/null > console.log 2>&1 &
+$NICE "$JAVA" -Xms${XMS:-1G} -Xmx${XMX:-2G} ${JAVA_OPTS:-} -jar paper.jar --nogui < /dev/null > console.log 2>&1 &
 PID=$!
 echo "$PID" > "$SERVER/.pid"
 stop_server() {
@@ -112,13 +115,18 @@ for _ in $(seq 1 300); do
 done
 grep -q "Adlerflug ist bereit" console.log || { echo "Adlerflug wurde nicht bereit:"; tail -40 console.log; exit 1; }
 # Die Strecken werden nach dem Start im Hintergrund vorbereitet (in einer frischen Welt erzeugt) – erst danach testen,
-# sonst kommen die Chunks an der Schanze beim Test-Spieler zu spät an.
-for _ in $(seq 1 300); do
+# sonst kommen die Chunks an der Schanze beim Test-Spieler zu spät an (auf einem knappen Rechner einige Minuten).
+for _ in $(seq 1 900); do
   if grep -q "Strecken vorbereitet" console.log; then break; fi
   if ! kill -0 "$PID" 2>/dev/null; then echo "Server ist abgestürzt:"; tail -40 console.log; exit 1; fi
   sleep 1
 done
-grep -E "Modell gebaut|Adlerflug-Welt bereit|Adlerflug ist bereit|Strecken vorbereitet|Netzwerk|nicht fliegbar" console.log || true
+# Die Strecke des Tages wird nach dem Start im Hintergrund gerechnet.
+for _ in $(seq 1 120); do
+  if grep -q "Strecke des Tages bereit" console.log; then break; fi
+  sleep 1
+done
+grep -E "Modell gebaut|Adlerflug-Welt bereit|Adlerflug ist bereit|Strecken vorbereitet|Strecke des Tages|Netzwerk|nicht fliegbar" console.log || true
 
 if [ "${SKIP_TEST:-0}" = "1" ]; then
   echo "Server läuft (PID $PID) – anhalten mit: node $HERE/rcon.cjs 127.0.0.1:$RCON_PORT $SERVER/.rcon-pass stop"

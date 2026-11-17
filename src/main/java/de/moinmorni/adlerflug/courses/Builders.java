@@ -411,6 +411,10 @@ final class Builders {
     // Stollenflug
     // =========================================================================================
 
+    /** Dunkles Stück mitten im Berg (x), dort leuchten nur die Ringe. */
+    private static final double DARK_FROM = 585;
+    private static final double DARK_TO = 705;
+
     static void stollen(World w, Course c) {
         Plan p = w.plan();
         Terrain t = w.terrain();
@@ -438,7 +442,9 @@ final class Builders {
                     }
                     lastFrameAt = walked;
                     inside = true;
-                    frame(p, center, side, tube, (int) Math.floor(center.y() - tube));
+                    // in der Mitte des Bergs brennt kein Licht mehr: dort leuchten nur die Ringe
+                    boolean dark = center.x() > DARK_FROM && center.x() < DARK_TO;
+                    frame(p, center, side, tube, (int) Math.floor(center.y() - tube), !dark);
                 }
             }
         }
@@ -508,7 +514,7 @@ final class Builders {
         }
     }
 
-    private static void frame(Plan p, Vec center, Vec side, double tube, int floor) {
+    private static void frame(Plan p, Vec center, Vec side, double tube, int floor, boolean lit) {
         int roof = (int) Math.floor(center.y() + tube - 0.5);
         for (int s : new int[] {-1, 1}) {
             Vec q = center.add(side.mul(s * (tube - 0.4)));
@@ -520,9 +526,14 @@ final class Builders {
         }
         for (double s = -tube + 0.5; s <= tube - 0.5; s += 0.5) {
             Vec q = center.add(side.mul(s));
-            p.set((int) Math.floor(q.x()), roof, (int) Math.floor(q.z()), "spruce_planks");
+            p.set((int) Math.floor(q.x()), roof, (int) Math.floor(q.z()), lit ? "spruce_planks" : "dark_oak_planks");
         }
-        p.set((int) Math.floor(center.x()), roof - 1, (int) Math.floor(center.z()), "lantern[hanging=true]");
+        if (lit) {
+            p.set((int) Math.floor(center.x()), roof - 1, (int) Math.floor(center.z()), "lantern[hanging=true]");
+        } else {
+            // erloschene Grubenlampe an einer Kette
+            p.set((int) Math.floor(center.x()), roof - 1, (int) Math.floor(center.z()), Blk.deco("iron_chain[axis=y]"));
+        }
     }
 
     // =========================================================================================
@@ -617,8 +628,116 @@ final class Builders {
     }
 
     // =========================================================================================
+    // Felsenlabyrinth
+    // =========================================================================================
+
+    static void labyrinth(World w, Course c) {
+        Plan p = w.plan();
+        Terrain t = w.terrain();
+        // Felsnadeln innen an jeder Kurve des Slaloms (Ringe 3 bis 6), weit über den Flug hinaus
+        for (int i = 2; i <= 5; i++) {
+            Ring r = c.rings.get(i);
+            Vec in = inside(c, i);
+            Vec at = r.center().add(in.mul(r.radius() + 5.6));
+            Rocks.pillar(p, t, (int) Math.floor(at.x()), (int) Math.floor(at.z()), 2.8, (int) r.center().y() + 16, 700 + i);
+            w.trees().block((int) at.x() - 5, (int) at.z() - 5, (int) at.x() + 5, (int) at.z() + 5);
+        }
+        // ein paar Nadeln abseits, damit das Tal wie ein Labyrinth aussieht
+        SplittableRandom rnd = new SplittableRandom(91);
+        for (int k = 0; k < 14; k++) {
+            int x = -700 + rnd.nextInt(300);
+            int z = -720 + rnd.nextInt(200);
+            if (t.corridorDistance(x, z) < 24) {
+                continue;
+            }
+            int top = t.height(x, z) + 14 + rnd.nextInt(18);
+            if (top < t.skyLimit(x, z)) {
+                Rocks.pillar(p, t, x, z, 2 + rnd.nextDouble() * 1.5, top, 800 + k);
+            }
+        }
+        // zwei Felsbögen (Ringe 7 und 8)
+        Rocks.arch(p, t, c.rings.get(6), 0.8, 4, 5, 77);
+        Rocks.arch(p, t, c.rings.get(7), 0.8, 3.5, 4, 78);
+        // Klemmblöcke hoch über der Spalte (Ringe 9 und 10)
+        for (int i : new int[] {8, 9}) {
+            Ring r = c.rings.get(i);
+            Vec u = across(r);
+            int y = (int) Math.floor(r.center().y() + r.radius() + 6);
+            for (double k = -9; k <= 9; k += 0.5) {
+                Vec q = r.center().add(u.mul(k));
+                int x = (int) Math.floor(q.x());
+                int z = (int) Math.floor(q.z());
+                if (t.height(x, z) < y) {
+                    p.set(x, y, z, Rocks.stone(rnd));
+                    if (Math.abs(k) < 3) {
+                        p.set(x, y + 1, z, Rocks.stone(rnd));
+                    }
+                }
+            }
+        }
+        lakeside(w, c, 31);
+    }
+
+    // =========================================================================================
+    // Höllenschlund
+    // =========================================================================================
+
+    static void schlund(World w, Course c, int caveFrom, int caveTo) {
+        Plan p = w.plan();
+        Terrain t = w.terrain();
+        Rocks.cave(p, t, c, caveFrom, caveTo, 6.0, 66);
+        // dunkle Pfeiler am Takt-Tor vor der Höhle
+        Ring gate = c.rings.get(5);
+        Vec u = across(gate);
+        for (int s : new int[] {-1, 1}) {
+            Vec q = gate.center().add(u.mul(s * (gate.radius() + 2.6)));
+            int x = (int) Math.floor(q.x());
+            int z = (int) Math.floor(q.z());
+            for (int y = t.height(x, z) - 2; y <= (int) gate.center().y() + 7; y++) {
+                p.set(x, y, z, y % 4 == 0 ? "chiseled_polished_blackstone" : "polished_basalt[axis=y]");
+            }
+            p.set(x, (int) gate.center().y() + 8, z, "soul_lantern");
+        }
+        // Felsnadel in der Haarnadel (Ringe 11 bis 13)
+        Vec in = inside(c, 11);
+        Vec at = c.rings.get(11).center().add(in.mul(16));
+        Rocks.pillar(p, t, (int) Math.floor(at.x()), (int) Math.floor(at.z()), 4, (int) c.rings.get(11).center().y() + 20, 913);
+        w.trees().block((int) at.x() - 7, (int) at.z() - 7, (int) at.x() + 7, (int) at.z() + 7);
+        lakeside(w, c, 47);
+    }
+
+    /** Seeufer am Ende: Seerosen, Steg mit Laterne, Hütte am Landeplatz. */
+    private static void lakeside(World w, Course c, long seed) {
+        Plan p = w.plan();
+        Terrain t = w.terrain();
+        SplittableRandom rnd = new SplittableRandom(seed);
+        Vec l = c.landing.at();
+        for (int k = 0; k < 40; k++) {
+            int x = (int) l.x() - 70 + rnd.nextInt(70);
+            int z = (int) l.z() - 40 + rnd.nextInt(50);
+            int g = t.height(x, z);
+            int water = t.water(x, z, g);
+            if (water != Integer.MIN_VALUE && water - g >= 1 && rnd.nextInt(3) == 0) {
+                p.setIfEmpty(x, water + 1, z, Blk.deco("lily_pad"));
+            }
+        }
+        Scenery.hut(p, t, (int) l.x() + 9, (int) l.z() - 4, 8, 7, false, seed);
+        w.trees().block((int) l.x() + 5, (int) l.z() - 8, (int) l.x() + 21, (int) l.z() + 7);
+    }
+
+    // =========================================================================================
     // Hilfen
     // =========================================================================================
+
+    /** Waagerechte Richtung zur Innenseite der Kurve an Ring {@code i} (zur Mitte zwischen Vorgänger und Nachfolger). */
+    static Vec inside(Course c, int i) {
+        Vec r = c.rings.get(i).center();
+        Vec a = i > 0 ? c.rings.get(i - 1).center() : c.start.line();
+        Vec b = i + 1 < c.ringCount() ? c.rings.get(i + 1).center() : r.add(c.rings.get(i).normal());
+        Vec mid = a.lerp(b, 0.5);
+        Vec d = new Vec(mid.x() - r.x(), 0, mid.z() - r.z());
+        return d.length() < 1e-6 ? across(c.rings.get(i)) : d.normalize();
+    }
 
     /** Waagerechte Richtung quer zum Ring (in der Ring-Ebene). */
     static Vec across(Ring r) {

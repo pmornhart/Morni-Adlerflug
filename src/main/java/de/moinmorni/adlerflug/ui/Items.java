@@ -19,6 +19,7 @@ public final class Items {
     public static final String MENU = "menu";
     public static final String TOP = "top";
     public static final String WEEKLY = "weekly";
+    public static final String DAILY = "daily";
     public static final String HIDE = "hide";
     public static final String LOBBY = "lobby";
     public static final String BACK = "back";

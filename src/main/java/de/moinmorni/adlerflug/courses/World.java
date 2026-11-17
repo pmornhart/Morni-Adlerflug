@@ -2,6 +2,9 @@ package de.moinmorni.adlerflug.courses;
 
 import de.moinmorni.adlerflug.course.Blk;
 import de.moinmorni.adlerflug.course.Course;
+import de.moinmorni.adlerflug.course.CourseBuilder;
+import de.moinmorni.adlerflug.course.Pilots;
+import de.moinmorni.adlerflug.flight.FlightSim;
 import de.moinmorni.adlerflug.course.Plan;
 import de.moinmorni.adlerflug.flight.Updraft;
 import de.moinmorni.adlerflug.flight.Vec;
@@ -24,9 +27,13 @@ public final class World {
     private final Terrain terrain;
     private final Trees trees;
     private final Plan plan;
-    private final List<Design> designs;
-    private final List<Course> courses;
+    private List<Design> designs;
+    private List<Course> courses;
+    /** Die vier Richtungen der Strecke des Tages (nur für Landschaft und Bauten). */
+    private List<Design> dailies = List.of();
     private final Basecamp basecamp;
+    /** Höhe der Landschaft je Säule, für die Prüf-Flüge (sie fragen dieselben Säulen sehr oft). */
+    private final java.util.Map<Long, Integer> heights = new java.util.concurrent.ConcurrentHashMap<>();
     private final List<Critter> critters = new ArrayList<>();
 
     /** Deko-Tier ohne eigenen Willen (Kühe auf der Weide …): Art, Position, Blickrichtung. */
@@ -45,13 +52,16 @@ public final class World {
     /** Baut das ganze Modell (dauert etwa eine Sekunde). */
     public static World create() {
         List<Design> designs = Designs.all();
+        List<Design> dailies = Daily.designs();
+        List<Design> every = new ArrayList<>(designs);
+        every.addAll(dailies);
         Terrain terrain = new Terrain(SEED);
         Basecamp camp = new Basecamp();
         camp.shape(terrain);
-        for (Design d : designs) {
+        for (Design d : every) {
             d.shaper().shape(terrain);
         }
-        for (Design d : designs) {
+        for (Design d : every) {
             List<List<Vec>> pts = d.cutPoints();
             for (int i = 0; i < d.cuts().size(); i++) {
                 Design.Cut cut = d.cuts().get(i);
@@ -65,8 +75,12 @@ public final class World {
         Trees trees = new Trees(terrain);
         Plan plan = new Plan();
         World w = new World(terrain, trees, plan, designs, camp);
-        camp.build(w, w.courses);
-        for (Design d : designs) {
+        w.dailies = dailies;
+        // je Strecke eine Station, dazu eine für die Strecke des Tages (Name und Farbe wie jeden Tag)
+        List<Course> stations = new ArrayList<>(w.courses);
+        stations.add(dailies.get(0).course());
+        camp.build(w, stations);
+        for (Design d : every) {
             Course c = d.course();
             Scenery.startTower(plan, terrain, c, d.accent());
             Vec s = c.start.stand();
@@ -79,9 +93,19 @@ public final class World {
                 trees.block((int) (u.x() - u.radius() - 2), (int) (u.z() - u.radius() - 2),
                         (int) (u.x() + u.radius() + 2), (int) (u.z() + u.radius() + 2));
             }
+            // Windsäcke am Rand jeder Windzone zeigen, wohin es drückt
+            Rocks.windsocks(plan, terrain, c, 15);
             d.builder().build(w, c);
         }
         plan.connect();
+        // Medaillen mit Landschaft nachrechnen: nur Flüge der Prüf-Piloten, die nirgends anstoßen, zählen
+        List<Design> done = new ArrayList<>();
+        for (Design d : designs) {
+            done.add(d.withCourse(CourseBuilder.medals(d.course(), w::solid)));
+        }
+        w.designs = List.copyOf(done);
+        w.courses = w.designs.stream().map(Design::course).toList();
+        w.heights.clear();
         return w;
     }
 
@@ -111,6 +135,54 @@ public final class World {
 
     public Optional<Course> course(String id) {
         return courses.stream().filter(c -> c.id.equals(id)).findFirst();
+    }
+
+    /**
+     * Strecke des Tages für diese Bedingungen – mit Medaillen, die nur Flüge ohne Anstoßen zählen (dauert etwas,
+     * geht auch außerhalb des Hauptthreads).
+     */
+    public Daily.Today daily(Daily.Conditions c) {
+        List<Daily.Conditions> tries = new ArrayList<>();
+        for (int step = 0; Daily.easier(c, step) != null; step++) {
+            if (!tries.contains(Daily.easier(c, step))) {
+                tries.add(Daily.easier(c, step));
+            }
+        }
+        tries.add(Daily.plain(c));
+        for (Daily.Conditions cur : tries) {
+            Course course;
+            try {
+                course = Daily.build(cur);
+            } catch (IllegalStateException e) {
+                continue;
+            }
+            if (!Daily.check(course, this::solid).finished()) {
+                continue;
+            }
+            if (!course.bonus.isEmpty()) {
+                FlightSim.Result hunt = FlightSim.fly(course.start.line(), course.start.launch(), course.air(),
+                        Pilots.hunter(course), this::solid, 8000);
+                if (!hunt.finished() || hunt.bonusCount() < course.bonus.size()) {
+                    continue;
+                }
+            }
+            Daily.Today today = new Daily.Today(cur, CourseBuilder.medals(course, this::solid));
+            heights.clear();
+            return today;
+        }
+        throw new IllegalStateException("Strecke des Tages " + c.id() + " lässt sich nicht bauen");
+    }
+
+    /** Die vier Richtungen der Strecke des Tages, wie die Landschaft für sie geformt ist. */
+    public List<Course> dailyLayouts() {
+        return dailies.stream().map(Design::course).toList();
+    }
+
+    /** Alle Strecken samt den vier Richtungen der Strecke des Tages (für Biome und Vorbereiten der Chunks). */
+    public List<Course> everyLayout() {
+        List<Course> out = new ArrayList<>(courses);
+        out.addAll(dailyLayouts());
+        return out;
     }
 
     /** Strecke, in deren Nähe der Punkt liegt (oder null). */
@@ -161,7 +233,7 @@ public final class World {
         if (b != null) {
             return b.solid();
         }
-        int h = terrain.height(x, z);
+        int h = heights.computeIfAbsent(Plan.key(x, 0, z), k -> terrain.height(x, z));
         if (y <= h) {
             return true;
         }

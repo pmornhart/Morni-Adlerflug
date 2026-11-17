@@ -42,7 +42,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class Construction implements Listener {
 
     /** Bau-Version: erhöhen, wenn sich Landschaft, Basislager oder Strecken ändern – dann entsteht die Welt neu. */
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
     /** Bis hierhin überträgt der Server die Ring-Anzeigen (Blöcke). */
     private static final int DISPLAY_RANGE = 320;
     private static final String STAMP = "welt.yml";
@@ -198,14 +198,19 @@ public final class Construction implements Listener {
         }
     }
 
+    /** So viele Chunks erzeugt die Vorbereitung höchstens gleichzeitig – Chunks für Spieler kommen dazwischen dran. */
+    static final int WARM_UP_OPEN = 8;
+
     /**
      * Chunks entlang aller Strecken im Hintergrund erzeugen, damit beim ersten Flug nichts nachlädt (die Welt entsteht
-     * sonst erst, wenn jemand hinkommt).
+     * sonst erst, wenn jemand hinkommt). Nie mehr als {@link #WARM_UP_OPEN} auf einmal: Wer alle auf einmal anfragt,
+     * stellt die Chunks der Spieler hinten an – auf einem knappen Rechner warteten sie nach einem Neubau minutenlang.
+     * „Strecken vorbereitet“ steht erst im Protokoll, wenn alle wirklich erzeugt sind.
      */
     public void warmUp(int perSecond) {
         List<long[]> todo = new ArrayList<>();
         java.util.Set<Long> seen = new java.util.HashSet<>();
-        for (Course c : model.courses()) {
+        for (Course c : model.everyLayout()) {
             for (Vec p : c.pathPoints(8)) {
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dz = -1; dz <= 1; dz++) {
@@ -219,13 +224,21 @@ public final class Construction implements Listener {
             }
         }
         int[] index = {0};
+        java.util.concurrent.atomic.AtomicInteger open = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger();
+        long started = System.currentTimeMillis();
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
-            for (int i = 0; i < perSecond / 4 && index[0] < todo.size(); i++, index[0]++) {
+            for (int i = 0; i < perSecond / 4 && index[0] < todo.size() && open.get() < WARM_UP_OPEN; i++, index[0]++) {
                 long[] c = todo.get(index[0]);
-                world.getChunkAtAsync((int) c[0], (int) c[1], true);
+                open.incrementAndGet();
+                world.getChunkAtAsync((int) c[0], (int) c[1], true).whenComplete((chunk, error) -> {
+                    open.decrementAndGet();
+                    done.incrementAndGet();
+                });
             }
-            if (index[0] >= todo.size()) {
-                log.info("Strecken vorbereitet (" + todo.size() + " Chunks).");
+            if (done.get() >= todo.size()) {
+                log.info("Strecken vorbereitet (" + todo.size() + " Chunks, "
+                        + (System.currentTimeMillis() - started) / 1000 + " s).");
                 task.cancel();
             }
         }, 40L, 5L);

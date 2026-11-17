@@ -73,6 +73,7 @@ public final class Menus {
         }
         m.set(4, Items.icon(Material.ELYTRA, Texts.get(l, "welcome.title"), List.of(Texts.get(l, "welcome.subtitle")),
                 false), null);
+        dailyIcon(m, 2, p, rec, l);
         boolean practice = pl.flights().practice(id);
         m.set(45, Items.icon(Material.TARGET, Texts.get(l, "menu.practice", Texts.arg("state",
                 Texts.raw(l, practice ? "on" : "off"))), List.of(Texts.get(l, "menu.practice.lore")), practice),
@@ -98,6 +99,33 @@ public final class Menus {
         click(p);
     }
 
+    /** Strecke des Tages: Symbol mit den Bedingungen (Linksklick fliegen, Rechtsklick Tages-Bestenliste). */
+    private void dailyIcon(Menu m, int slot, Player p, PlayerRecord rec, String l) {
+        var d = pl.daily();
+        if (d == null) {
+            m.set(slot, Items.icon(Material.CLOCK, Texts.get(l, "menu.daily"), List.of(pl.dailyText(l)),
+                    false), null);
+            return;
+        }
+        Course c = d.course();
+        ItemStack icon = courseIcon(c, rec, l, true);
+        var meta = icon.getItemMeta();
+        List<Component> lore = new ArrayList<>();
+        lore.add(Texts.get(l, "menu.daily.sub"));
+        lore.add(pl.dailyText(l));
+        lore.addAll(meta.lore() == null ? List.of() : meta.lore());
+        meta.lore(lore);
+        icon.setItemMeta(meta);
+        m.set(slot, icon, (who, right) -> {
+            if (right) {
+                top(who, c, true);
+            } else {
+                who.closeInventory();
+                pl.flights().select(who, c);
+            }
+        });
+    }
+
     /** Symbol einer Strecke mit Bestzeit, Medaillen, Rekord und Platz. */
     private ItemStack courseIcon(Course c, PlayerRecord rec, String l, boolean clickHints) {
         List<Component> lore = new ArrayList<>();
@@ -105,6 +133,9 @@ public final class Menus {
                 .append(Texts.get(l, "menu.rings", Texts.arg("n", c.ringCount()))));
         for (String line : wrap(c.text(l))) {
             lore.add(Component.text(line, NamedTextColor.GRAY));
+        }
+        if (!c.daily() && !Flights.extrasText(c, l).isEmpty()) {
+            lore.add(Flights.extras(c, l));
         }
         lore.add(Component.empty());
         long best = rec.best(c.id);
@@ -170,11 +201,14 @@ public final class Menus {
             Material icon = switch (r.kind()) {
                 case FINISH -> Material.GOLD_BLOCK;
                 case BOOST -> Material.LIGHT_BLUE_CONCRETE;
-                case NORMAL -> Material.matchMaterial(de.moinmorni.adlerflug.courses.Scenery.SECTION_BLOCKS[
-                        Math.min(3, r.section())]);
+                case BONUS -> Material.LIME_CONCRETE;
+                case NORMAL -> r.gate() != null ? Material.YELLOW_CONCRETE : Material.matchMaterial(
+                        de.moinmorni.adlerflug.courses.Scenery.SECTION_BLOCKS[Math.min(3, r.section())]);
             };
+            String what = r.kind() == Ring.Kind.BOOST ? "menu.pick.boost" : r.gate() != null ? "menu.pick.gate"
+                    : r.motion() != null ? "menu.pick.moving" : "menu.pick.normal";
             m.set(slot, Items.icon(icon, Texts.get(l, "menu.pick.ring", Texts.arg("n", r.index() + 1)),
-                    List.of(Texts.get(l, r.kind() == Ring.Kind.BOOST ? "menu.pick.boost" : "menu.pick.normal")), false),
+                    List.of(Texts.get(l, what)), false),
                     (who, right) -> {
                         who.closeInventory();
                         pl.flights().practiceFrom(who, c, r.index());
@@ -190,8 +224,8 @@ public final class Menus {
         String l = pl.lang(p);
         PlayerRecord rec = pl.store().record(p.getUniqueId(), p.getName());
         Menu m = new Menu(4, Texts.get(l, "menu.book"));
-        int[] slots = {10, 11, 12, 14, 15, 16};
-        List<Course> cs = pl.model().courses();
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 21, 23};
+        List<Course> cs = pl.courses();
         for (int i = 0; i < cs.size() && i < slots.length; i++) {
             Course c = cs.get(i);
             ItemStack icon = courseIcon(c, rec, l, false);
@@ -221,6 +255,9 @@ public final class Menus {
         lore.add(Texts.get(l, "stats.total", Texts.arg("finishes", rec.finishes), Texts.arg("flights", rec.flights),
                 Texts.arg("rings", rec.rings)));
         lore.add(Texts.get(l, "stats.medals", Texts.comp("medals", pl.medalCount(rec, l))));
+        if (rec.days > 0) {
+            lore.add(Texts.get(l, "stats.days", Texts.arg("n", rec.days)));
+        }
         if (rec.weeklyDone(pl.store().weekId())) {
             lore.add(Texts.get(l, "stats.badge", Texts.comp("badge", Texts.get(l, "badge"))));
         }
