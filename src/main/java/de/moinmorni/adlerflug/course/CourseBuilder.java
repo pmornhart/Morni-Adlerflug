@@ -427,9 +427,16 @@ public final class CourseBuilder {
                 throw new IllegalStateException(id + ": Flug über alle Bonus-Ringe klappt nicht (" + hunt.bonusCount()
                         + "/" + bonus.size() + ", " + hunt.problem() + ")");
             }
-            float[] bp = new float[hunt.path().size() * 3];
-            for (int i = 0; i < hunt.path().size(); i++) {
-                Vec v = hunt.path().get(i);
+            // wie beim Musterflug nach dem Ziel noch ein Stück weiter (der Autopilot braucht den Punkt hinter dem Ziel)
+            List<Vec> way = new ArrayList<>(hunt.path());
+            Vec last = way.get(way.size() - 1);
+            Vec step = last.sub(way.get(way.size() - 2));
+            for (int i = 1; i <= AFTER_FINISH; i++) {
+                way.add(last.add(step.mul(i)));
+            }
+            float[] bp = new float[way.size() * 3];
+            for (int i = 0; i < way.size(); i++) {
+                Vec v = way.get(i);
                 bp[i * 3] = (float) v.x();
                 bp[i * 3 + 1] = (float) v.y();
                 bp[i * 3 + 2] = (float) v.z();

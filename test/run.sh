@@ -14,6 +14,7 @@
 #                  damit nichts heruntergeladen werden muss) – optional
 #   ADLER_NODE_MODULES  node_modules mit mineflayer
 #   EXTRA_PLUGINS  weitere Jars für den Server (z. B. ViaVersion + ViaBackwards für einen echten 26.3-Client)
+#   ONLY, TEIL     nur diese Strecken für Bert (z. B. ONLY=klammflug) bzw. TEIL=rest ohne Annas Flüge
 #   XMS, XMX, JAVA_OPTS  Speicher und Java-Optionen des Servers (auf einem knappen Rechner z. B. XMS=256M XMX=1536M
 #                  JAVA_OPTS=-XX:+UseSerialGC)
 #

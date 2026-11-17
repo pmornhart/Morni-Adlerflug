@@ -122,7 +122,7 @@ class CourseTest {
             }
             // auch der Autopilot im echten Test fliegt diesen Weg: Bonus-Flug ohne Anstoßen
             assertNotNull(c.bonusPath, c.id);
-            for (int t = 1; t < c.bonusPathTicks(); t++) {
+            for (int t = 1; t < c.bonusPathTicks() - 28; t++) { // ohne das Stück hinter dem Ziel
                 Vec p = c.bonusPathAt(t);
                 assertFalse(world.solid((int) Math.floor(p.x()), (int) Math.floor(p.y() + 0.3), (int) Math.floor(p.z())),
                         c.id + ": Bonus-Flug stößt bei Tick " + t + " an");

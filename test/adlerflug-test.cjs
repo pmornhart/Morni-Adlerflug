@@ -23,6 +23,7 @@ const [HOST = '127.0.0.1', PORT = '25950', RCON = '127.0.0.1:26050', PASS_FILE, 
 const PASS = fs.readFileSync(PASS_FILE, 'utf8').trim();
 const VERSION = process.env.MC_VERSION ?? '26.1';
 const ONLY = process.env.ONLY ?? '';
+const TEIL = process.env.TEIL ?? '';
 
 const results = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -235,167 +236,174 @@ async function main() {
   check('Strecke des Tages im Menü', titles.some((t) => /Tagesflug/.test(t)), titles.join(' / '));
   await closeWindow(anna);
 
-  // ---------- Station anklicken → Schanze ----------
-  const st = stationen.find((x) => x.course === 'almrundflug');
-  // vor das Schild stellen (Reichweite), zur Mitte des Platzes hin versetzt
-  const toMid = Math.hypot(st.x, st.z);
-  const sx = st.x + 0.5 - (st.x / toMid) * 2.5;
-  const sz = st.z + 0.5 - (st.z / toMid) * 2.5;
-  await cmd(`execute in minecraft:adlerflug run tp Anna ${sx.toFixed(2)} 151 ${sz.toFixed(2)}`);
-  await sleep(1200);
-  const sign = anna.blockAt(new (require('vec3'))(st.x, st.y, st.z));
-  check('Schild an der Station', sign && /sign/.test(sign.name), sign?.name);
-  await anna.lookAt(sign.position.offset(0.5, 0.5, 0.5), true);
-  await anna.activateBlock(sign);
-  const onRamp = await waitFor(async () => (await status()).Anna?.state === 'READY', 6000, 250);
-  s = await status();
-  const alm = await course('almrundflug');
-  check('Schild startet die Strecke (auf der Schanze)', onRamp && Math.hypot(s.Anna.pos[0] - alm.stand[0], s.Anna.pos[2] - alm.stand[2]) < 2,
-    JSON.stringify(s.Anna));
-  // mineflayer braucht nach dem Sprung zur Schanze etwas, bis die Chunks dort da sind – auch die vor der Kante: in einem
-  // Chunk, den es noch nicht hat, bleibt der Test-Spieler einfach stehen (bei Almrundflug liegt die Kante schon im
-  // nächsten Chunk). In einer frisch erzeugten Welt auf einem ausgelasteten Rechner dauert das auch einmal eine Minute.
-  {
-    const V = require('vec3');
-    const len = Math.hypot(alm.line[0] - alm.stand[0], alm.line[2] - alm.stand[2]) || 1;
-    const ux = (alm.line[0] - alm.stand[0]) / len;
-    const uz = (alm.line[2] - alm.stand[2]) / len;
-    const ahead = [0, 4, 8, 12, 16, 20].map((k) => new V(alm.line[0] + ux * k, alm.line[1] - 2, alm.line[2] + uz * k));
-    await waitFor(() => Math.hypot(anna.entity.position.x - alm.stand[0], anna.entity.position.z - alm.stand[2]) < 2
-      && anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null && anna.entity.onGround
-      && ahead.every((at) => anna.blockAt(at) != null), 120000, 250);
+  // TEIL=rest überspringt Annas Flüge auf dem Almrundflug (auf einem knappen Rechner, um den Rest nachzuholen)
+  let r;
+  if (TEIL !== 'rest') {
+    // ---------- Station anklicken → Schanze ----------
+    const st = stationen.find((x) => x.course === 'almrundflug');
+    // vor das Schild stellen (Reichweite), zur Mitte des Platzes hin versetzt
+    const toMid = Math.hypot(st.x, st.z);
+    const sx = st.x + 0.5 - (st.x / toMid) * 2.5;
+    const sz = st.z + 0.5 - (st.z / toMid) * 2.5;
+    await cmd(`execute in minecraft:adlerflug run tp Anna ${sx.toFixed(2)} 151 ${sz.toFixed(2)}`);
+    await sleep(1200);
+    const sign = anna.blockAt(new (require('vec3'))(st.x, st.y, st.z));
+    check('Schild an der Station', sign && /sign/.test(sign.name), sign?.name);
+    await anna.lookAt(sign.position.offset(0.5, 0.5, 0.5), true);
+    await anna.activateBlock(sign);
+    const onRamp = await waitFor(async () => (await status()).Anna?.state === 'READY', 6000, 250);
+    s = await status();
+    const alm = await course('almrundflug');
+    check('Schild startet die Strecke (auf der Schanze)', onRamp && Math.hypot(s.Anna.pos[0] - alm.stand[0], s.Anna.pos[2] - alm.stand[2]) < 2,
+      JSON.stringify(s.Anna));
+    // mineflayer braucht nach dem Sprung zur Schanze etwas, bis die Chunks dort da sind – auch die vor der Kante: in einem
+    // Chunk, den es noch nicht hat, bleibt der Test-Spieler einfach stehen (bei Almrundflug liegt die Kante schon im
+    // nächsten Chunk). In einer frisch erzeugten Welt auf einem ausgelasteten Rechner dauert das auch einmal eine Minute.
+    {
+      const V = require('vec3');
+      const len = Math.hypot(alm.line[0] - alm.stand[0], alm.line[2] - alm.stand[2]) || 1;
+      const ux = (alm.line[0] - alm.stand[0]) / len;
+      const uz = (alm.line[2] - alm.stand[2]) / len;
+      const ahead = [0, 4, 8, 12, 16, 20].map((k) => new V(alm.line[0] + ux * k, alm.line[1] - 2, alm.line[2] + uz * k));
+      const ready = await waitFor(() => Math.hypot(anna.entity.position.x - alm.stand[0], anna.entity.position.z - alm.stand[2]) < 2
+        && anna.blockAt(anna.entity.position.offset(0, -1, 0)) != null && anna.entity.onGround
+        && ahead.every((at) => anna.blockAt(at) != null), 120000, 250);
+      if (!ready) console.log('  (Chunks vor der Schanzenkante sind beim Test-Spieler nach 2 Minuten noch nicht da)');
+    }
+    await sleep(1500);
+    check('Unterwegs-Leiste (Zurück zum Ring)', /letzten Ring/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
+
+    // ---------- Echter Absprung mit Flügeln ----------
+    clear(anna);
+    {
+      const V = require('vec3');
+      const dx = alm.line[0] - alm.stand[0];
+      const dz = alm.line[2] - alm.stand[2];
+      await anna.lookAt(new V(alm.line[0] + dx * 4, anna.entity.position.y + 1.6, alm.line[2] + dz * 4), true);
+    }
+    anna.setControlState('forward', true);
+    anna.setControlState('sprint', true);
+    // Bis zur Kante sind es ein paar Schritte; auf einem ausgelasteten Rechner (Test mit nice) läuft der Test-Spieler
+    // deutlich langsamer als im echten Spiel – darum großzügig warten.
+    const took = await waitFor(async () => (await status()).Anna?.state === 'FLYING', 60000, 150);
+    anna.setControlState('forward', false);
+    anna.setControlState('sprint', false);
+    check('Absprung erkannt – Zeit läuft', took && sawBar(anna, /Los!/), anna.bars.slice(-2).join(' | '));
+    check('Netzwerk: Anna fliegt gerade (playing)', await waitFor(() => calls().some((c) => c.t === 'playing' && c.name === 'Anna'
+      && c.playing === true), 3000));
+    const glidePos = [];
+    for (let i = 0; i < 14; i++) {
+      await sleep(200);
+      const x = (await status()).Anna;
+      glidePos.push(x);
+    }
+    const g0 = glidePos[0];
+    const g1 = glidePos[glidePos.length - 1];
+    const farthest = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.max(m, Math.hypot(x.pos[0] - alm.stand[0], x.pos[2] - alm.stand[2])), 0);
+    const low = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.min(m, x.pos[1]), 999);
+    // mineflayer gleitet nicht: es fällt im Bogen von der Kante (ohne Flügel ein paar Blöcke weit)
+    const gone = farthest;
+    check('Flügel offen (Server: gleitet)', glidePos.some((x) => x?.gliding), glidePos.map((x) => x?.gliding).join(','));
+    check('Echter Absprung: in der Luft weg von der Schanze', took && gone > 4.5 && low < alm.line[1] - 3,
+      `${gone.toFixed(1)} Blöcke, tiefster Punkt ${low.toFixed(1)}, danach ${g1?.state} (mineflayer gleitet nicht und landet → zurück)`);
+    console.log(`  (echter Gleitflug: ${anna.entity.elytraFlying ? 'mineflayer gleitet' : 'mineflayer fällt'}, nächster Ring ${g1?.next})`);
+
+    // ---------- Zurück-Gegenstand und Neustart ----------
+    clear(anna);
+    await useItem(anna, 1);
+    s = await status();
+    check('Neustart: zurück auf der Schanze', s.Anna.state === 'READY' && sawBar(anna, /Neustart/),
+      `${s.Anna.state} ${anna.bars.slice(-1)}`);
+
+    // ---------- Verpasster Ring (Autopilot fliegt daneben) ----------
+    clear(anna);
+    r = await guidedFlight(anna, 'almrundflug', 'daneben 3', 60000);
+    s = await status();
+    check('Ring 3 verpasst → zurück', r.done && sees(anna, /Ring 3 verpasst/), anna.chats.slice(-2).join(' | '));
+    check('Weiter ab Ring 2 (in der Luft, Zeit läuft)', s.Anna?.state === 'FLYING' && s.Anna?.next === 2 && s.Anna.gliding,
+      JSON.stringify(s.Anna));
+    const ring2 = alm.rings[1];
+    check('Position kurz hinter Ring 2', s.Anna && Math.hypot(s.Anna.pos[0] - ring2.c[0], s.Anna.pos[2] - ring2.c[2]) < 12,
+      JSON.stringify(s.Anna?.pos));
+    // Rest der Strecke mit dem Autopiloten (erster Flug mit Zurücksetzen = langsamer)
+    clear(anna);
+    r = await guidedFlight(anna, 'almrundflug', '', 90000);
+    check('Ziel erreicht (erster Flug)', r.done && sawTitle(anna, /Ziel/) && sees(anna, /Erster Flug auf Almrundflug/),
+      anna.chats.slice(-4).join(' | '));
+    const firstTime = bestOf('Anna', 'time_almrundflug_ms')[0];
+    check('Bestzeit ans Netzwerk (kleiner ist besser)', firstTime > 0 && statsOf('Anna').some((c) => c.lower === true),
+      `${firstTime} ms`);
+    check('Ringe gezählt (12 + 1 verpasst-Zwischenstand)', sumAdd('Anna', 'rings') >= 12, String(sumAdd('Anna', 'rings')));
+    check('Zurücksetzen gezählt (resets)', sumAdd('Anna', 'resets') >= 1, String(sumAdd('Anna', 'resets')));
+    check('Flug gezählt (flights)', sumAdd('Anna', 'flights') >= 2, String(sumAdd('Anna', 'flights')));
+    await landPhysics(anna);
+    s = await status();
+    check('Nach dem Ziel auf dem Landeplatz', s.Anna && Math.hypot(s.Anna.pos[0] - alm.landing[0], s.Anna.pos[2] - alm.landing[2]) < 4,
+      JSON.stringify(s.Anna?.pos));
+    // Die Leiste kommt im selben Moment wie der Sprung auf den Landeplatz – unter Last beim Test-Spieler etwas später.
+    await waitFor(() => /Nochmal/.test(itemName(slot(anna, 0))), 5000, 200);
+    check('Leiste nach dem Ziel (Nochmal fliegen)', /Nochmal/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
+
+    // ---------- Zweiter Flug: sauber → neue Bestzeit, Medaille ----------
+    clear(anna);
+    await useItem(anna, 0); // Nochmal fliegen
+    await waitFor(async () => (await status()).Anna?.state === 'READY', 6000, 250);
+    r = await guidedFlight(anna, 'almrundflug', '', 90000);
+    // die Meldungen kommen im selben Tick wie das Ziel – unter Last beim Test-Spieler etwas später
+    await waitFor(() => sees(anna, /Neue Bestzeit/) && sees(anna, /Neue Medaille/), 8000, 200);
+    const times = bestOf('Anna', 'time_almrundflug_ms');
+    check('Zweiter Flug: neue Bestzeit', r.done && sees(anna, /Neue Bestzeit/) && times.length >= 2 && times[1] < times[0],
+      `${times.join(' → ')} ms | ${anna.chats.filter((c) => /Bestzeit|Medaille/.test(c)).join(' | ')}`);
+    check('Medaille erflogen', sees(anna, /Neue Medaille/) && sumAdd('Anna', 'medals') >= 1, String(sumAdd('Anna', 'medals')));
+    check('Zwischenzeiten im Vergleich (grün/rot)', sawBar(anna, /Ring \d+\/12 .*\([+−]/), anna.bars.filter((b) => /Ring/.test(b)).slice(-1)[0]);
+    check('Tempo in der Aktionsleiste', anna.bars.some((b) => /[1-9]\d* km\/h/.test(b)), anna.bars.filter((b) => /km/.test(b)).slice(-1)[0]);
+    const yml = readFile(playerFile('Anna'));
+    check('Bestzeit in der Spielerdatei', /almrundflug:[\s\S]*best: \d+/.test(yml));
+    check('Geist der Bestzeit gespeichert', fs.existsSync(ghostFile('Anna', 'almrundflug')));
+    await landPhysics(anna);
+
+    // ---------- Bestenliste ----------
+    clear(anna);
+    anna.chat('/adlerflug top almrundflug');
+    await sleep(800);
+    check('Bestenliste per Befehl', sees(anna, /1\. Anna/), anna.chats.slice(-2).join(' | '));
+    const book = await openWithItem(anna, 2);
+    check('Flugbuch öffnet', book && /Flugbuch/.test(plain(book.title)), book && plain(book.title));
+    await closeWindow(anna);
+
+    // ---------- Gelandet und zu weit weg ----------
+    clear(anna);
+    await select(anna, 'almrundflug');
+    r = await guidedFlight(anna, 'almrundflug', 'bis 4', 40000);
+    await sleep(400);
+    s = await status();
+    const r4 = alm.rings[3];
+    const r5 = alm.rings[4];
+    // auf den Boden zwischen Ring 4 und 5 setzen (Physik an: steht dort)
+    anna.physicsEnabled = true;
+    const mx = ((r4.c[0] + r5.c[0]) / 2).toFixed(1);
+    const mz = ((r4.c[2] + r5.c[2]) / 2).toFixed(1);
+    await cmd(`execute in minecraft:adlerflug positioned ${mx} ${r5.c[1].toFixed(1)} ${mz} positioned over motion_blocking_no_leaves run tp Anna ~ ~ ~`);
+    clear(anna);
+    const landed = await waitFor(() => sees(anna, /Gelandet|Ins Wasser|Zu weit/), 6000, 200);
+    check('Gelandet → zurück zum letzten Ring', landed && sees(anna, /Gelandet/), anna.chats.slice(-2).join(' | '));
+    anna.physicsEnabled = false;
+    await sleep(500);
+    s = await status();
+    await cmd('execute as Anna at Anna run tp Anna ~ ~ ~70');
+    clear(anna);
+    const far = await waitFor(() => sees(anna, /Zu weit/), 4000, 200);
+    check('Zu weit von der Strecke → zurück', far, anna.chats.slice(-2).join(' | '));
+    clear(anna);
+    anna.chat('/adlerflug ring');
+    await sleep(700);
+    check('„Zurück zum letzten Ring“ per Befehl', sees(anna, /Zurück zum letzten Ring/));
+    anna.chat('/adlerflug aufgeben');
+    await sleep(800);
+    s = await status();
+    check('Aufgeben → Adlerhorst', !s.Anna.course && Math.hypot(s.Anna.pos[0], s.Anna.pos[2]) < 25, JSON.stringify(s.Anna));
+    anna.physicsEnabled = true;
   }
-  await sleep(1500);
-  check('Unterwegs-Leiste (Zurück zum Ring)', /letzten Ring/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
-
-  // ---------- Echter Absprung mit Flügeln ----------
-  clear(anna);
-  {
-    const V = require('vec3');
-    const dx = alm.line[0] - alm.stand[0];
-    const dz = alm.line[2] - alm.stand[2];
-    await anna.lookAt(new V(alm.line[0] + dx * 4, anna.entity.position.y + 1.6, alm.line[2] + dz * 4), true);
-  }
-  anna.setControlState('forward', true);
-  anna.setControlState('sprint', true);
-  // Bis zur Kante sind es ein paar Schritte; auf einem ausgelasteten Rechner (Test mit nice) läuft der Test-Spieler
-  // deutlich langsamer als im echten Spiel – darum großzügig warten.
-  const took = await waitFor(async () => (await status()).Anna?.state === 'FLYING', 30000, 150);
-  anna.setControlState('forward', false);
-  anna.setControlState('sprint', false);
-  check('Absprung erkannt – Zeit läuft', took && sawBar(anna, /Los!/), anna.bars.slice(-2).join(' | '));
-  check('Netzwerk: Anna fliegt gerade (playing)', await waitFor(() => calls().some((c) => c.t === 'playing' && c.name === 'Anna'
-    && c.playing === true), 3000));
-  const glidePos = [];
-  for (let i = 0; i < 14; i++) {
-    await sleep(200);
-    const x = (await status()).Anna;
-    glidePos.push(x);
-  }
-  const g0 = glidePos[0];
-  const g1 = glidePos[glidePos.length - 1];
-  const farthest = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.max(m, Math.hypot(x.pos[0] - alm.stand[0], x.pos[2] - alm.stand[2])), 0);
-  const low = glidePos.filter((x) => x?.state === 'FLYING').reduce((m, x) => Math.min(m, x.pos[1]), 999);
-  // mineflayer gleitet nicht: es fällt im Bogen von der Kante (ohne Flügel ein paar Blöcke weit)
-  const gone = farthest;
-  check('Flügel offen (Server: gleitet)', glidePos.some((x) => x?.gliding), glidePos.map((x) => x?.gliding).join(','));
-  check('Echter Absprung: in der Luft weg von der Schanze', took && gone > 4.5 && low < alm.line[1] - 3,
-    `${gone.toFixed(1)} Blöcke, tiefster Punkt ${low.toFixed(1)}, danach ${g1?.state} (mineflayer gleitet nicht und landet → zurück)`);
-  console.log(`  (echter Gleitflug: ${anna.entity.elytraFlying ? 'mineflayer gleitet' : 'mineflayer fällt'}, nächster Ring ${g1?.next})`);
-
-  // ---------- Zurück-Gegenstand und Neustart ----------
-  clear(anna);
-  await useItem(anna, 1);
-  s = await status();
-  check('Neustart: zurück auf der Schanze', s.Anna.state === 'READY' && sawBar(anna, /Neustart/),
-    `${s.Anna.state} ${anna.bars.slice(-1)}`);
-
-  // ---------- Verpasster Ring (Autopilot fliegt daneben) ----------
-  clear(anna);
-  let r = await guidedFlight(anna, 'almrundflug', 'daneben 3', 60000);
-  s = await status();
-  check('Ring 3 verpasst → zurück', r.done && sees(anna, /Ring 3 verpasst/), anna.chats.slice(-2).join(' | '));
-  check('Weiter ab Ring 2 (in der Luft, Zeit läuft)', s.Anna?.state === 'FLYING' && s.Anna?.next === 2 && s.Anna.gliding,
-    JSON.stringify(s.Anna));
-  const ring2 = alm.rings[1];
-  check('Position kurz hinter Ring 2', s.Anna && Math.hypot(s.Anna.pos[0] - ring2.c[0], s.Anna.pos[2] - ring2.c[2]) < 12,
-    JSON.stringify(s.Anna?.pos));
-  // Rest der Strecke mit dem Autopiloten (erster Flug mit Zurücksetzen = langsamer)
-  clear(anna);
-  r = await guidedFlight(anna, 'almrundflug', '', 90000);
-  check('Ziel erreicht (erster Flug)', r.done && sawTitle(anna, /Ziel/) && sees(anna, /Erster Flug auf Almrundflug/),
-    anna.chats.slice(-4).join(' | '));
-  const firstTime = bestOf('Anna', 'time_almrundflug_ms')[0];
-  check('Bestzeit ans Netzwerk (kleiner ist besser)', firstTime > 0 && statsOf('Anna').some((c) => c.lower === true),
-    `${firstTime} ms`);
-  check('Ringe gezählt (12 + 1 verpasst-Zwischenstand)', sumAdd('Anna', 'rings') >= 12, String(sumAdd('Anna', 'rings')));
-  check('Zurücksetzen gezählt (resets)', sumAdd('Anna', 'resets') >= 1, String(sumAdd('Anna', 'resets')));
-  check('Flug gezählt (flights)', sumAdd('Anna', 'flights') >= 2, String(sumAdd('Anna', 'flights')));
-  await landPhysics(anna);
-  s = await status();
-  check('Nach dem Ziel auf dem Landeplatz', s.Anna && Math.hypot(s.Anna.pos[0] - alm.landing[0], s.Anna.pos[2] - alm.landing[2]) < 4,
-    JSON.stringify(s.Anna?.pos));
-  // Die Leiste kommt im selben Moment wie der Sprung auf den Landeplatz – unter Last beim Test-Spieler etwas später.
-  await waitFor(() => /Nochmal/.test(itemName(slot(anna, 0))), 5000, 200);
-  check('Leiste nach dem Ziel (Nochmal fliegen)', /Nochmal/.test(itemName(slot(anna, 0))), itemName(slot(anna, 0)));
-
-  // ---------- Zweiter Flug: sauber → neue Bestzeit, Medaille ----------
-  clear(anna);
-  await useItem(anna, 0); // Nochmal fliegen
-  await waitFor(async () => (await status()).Anna?.state === 'READY', 6000, 250);
-  r = await guidedFlight(anna, 'almrundflug', '', 90000);
-  const times = bestOf('Anna', 'time_almrundflug_ms');
-  check('Zweiter Flug: neue Bestzeit', r.done && sees(anna, /Neue Bestzeit/) && times.length >= 2 && times[1] < times[0],
-    `${times.join(' → ')} ms | ${anna.chats.filter((c) => /Bestzeit|Medaille/.test(c)).join(' | ')}`);
-  check('Medaille erflogen', sees(anna, /Neue Medaille/) && sumAdd('Anna', 'medals') >= 1, String(sumAdd('Anna', 'medals')));
-  check('Zwischenzeiten im Vergleich (grün/rot)', sawBar(anna, /Ring \d+\/12 .*\([+−]/), anna.bars.filter((b) => /Ring/.test(b)).slice(-1)[0]);
-  check('Tempo in der Aktionsleiste', anna.bars.some((b) => /[1-9]\d* km\/h/.test(b)), anna.bars.filter((b) => /km/.test(b)).slice(-1)[0]);
-  const yml = readFile(playerFile('Anna'));
-  check('Bestzeit in der Spielerdatei', /almrundflug:[\s\S]*best: \d+/.test(yml));
-  check('Geist der Bestzeit gespeichert', fs.existsSync(ghostFile('Anna', 'almrundflug')));
-  await landPhysics(anna);
-
-  // ---------- Bestenliste ----------
-  clear(anna);
-  anna.chat('/adlerflug top almrundflug');
-  await sleep(800);
-  check('Bestenliste per Befehl', sees(anna, /1\. Anna/), anna.chats.slice(-2).join(' | '));
-  const book = await openWithItem(anna, 2);
-  check('Flugbuch öffnet', book && /Flugbuch/.test(plain(book.title)), book && plain(book.title));
-  await closeWindow(anna);
-
-  // ---------- Gelandet und zu weit weg ----------
-  clear(anna);
-  await select(anna, 'almrundflug');
-  r = await guidedFlight(anna, 'almrundflug', 'bis 4', 40000);
-  await sleep(400);
-  s = await status();
-  const r4 = alm.rings[3];
-  const r5 = alm.rings[4];
-  // auf den Boden zwischen Ring 4 und 5 setzen (Physik an: steht dort)
-  anna.physicsEnabled = true;
-  const mx = ((r4.c[0] + r5.c[0]) / 2).toFixed(1);
-  const mz = ((r4.c[2] + r5.c[2]) / 2).toFixed(1);
-  await cmd(`execute in minecraft:adlerflug positioned ${mx} ${r5.c[1].toFixed(1)} ${mz} positioned over motion_blocking_no_leaves run tp Anna ~ ~ ~`);
-  clear(anna);
-  const landed = await waitFor(() => sees(anna, /Gelandet|Ins Wasser|Zu weit/), 6000, 200);
-  check('Gelandet → zurück zum letzten Ring', landed && sees(anna, /Gelandet/), anna.chats.slice(-2).join(' | '));
-  anna.physicsEnabled = false;
-  await sleep(500);
-  s = await status();
-  await cmd('execute as Anna at Anna run tp Anna ~ ~ ~70');
-  clear(anna);
-  const far = await waitFor(() => sees(anna, /Zu weit/), 4000, 200);
-  check('Zu weit von der Strecke → zurück', far, anna.chats.slice(-2).join(' | '));
-  clear(anna);
-  anna.chat('/adlerflug ring');
-  await sleep(700);
-  check('„Zurück zum letzten Ring“ per Befehl', sees(anna, /Zurück zum letzten Ring/));
-  anna.chat('/adlerflug aufgeben');
-  await sleep(800);
-  s = await status();
-  check('Aufgeben → Adlerhorst', !s.Anna.course && Math.hypot(s.Anna.pos[0], s.Anna.pos[2]) < 25, JSON.stringify(s.Anna));
-  anna.physicsEnabled = true;
 
   // ---------- Bert fliegt alle Strecken (Englisch, jeder Ring zählt) ----------
   const week0 = (await cmd('adleradmin status'))[0].split('\n')[0].split('woche=')[1].trim();
