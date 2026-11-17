@@ -115,8 +115,8 @@ for _ in $(seq 1 300); do
 done
 grep -q "Adlerflug ist bereit" console.log || { echo "Adlerflug wurde nicht bereit:"; tail -40 console.log; exit 1; }
 # Die Strecken werden nach dem Start im Hintergrund vorbereitet (in einer frischen Welt erzeugt) – erst danach testen,
-# sonst kommen die Chunks an der Schanze beim Test-Spieler zu spät an.
-for _ in $(seq 1 300); do
+# sonst kommen die Chunks an der Schanze beim Test-Spieler zu spät an (auf einem knappen Rechner einige Minuten).
+for _ in $(seq 1 900); do
   if grep -q "Strecken vorbereitet" console.log; then break; fi
   if ! kill -0 "$PID" 2>/dev/null; then echo "Server ist abgestürzt:"; tail -40 console.log; exit 1; fi
   sleep 1

@@ -52,9 +52,24 @@ allein.
   - Alte Bestzeiten auf geänderten Strecken zählen nicht mehr (Fingerabdruck `Course.signature` je Bestzeit, Zähler
     bleiben). `Construction.VERSION` 3. Neue config: `strecke-des-tages`. Neue Statistik: `bonus_rings`,
     `golden_eagles`, `days`, `finishes_tagesflug`; Strecken `felsenlabyrinth`, `hoellenschlund`.
-  - Geprüft: 75 Unit-Tests (JUnit 6.1.3; neu u. a. Bonus-Flug ohne Anstoßen, Steinadler erreichbar, Tore/Bewegung/Böen,
+  - Behoben (beim echten Test gefunden): Die Vorbereitung der Strecken fragte nach einem Neubau alle 1 537 Chunks auf
+    einmal an und meldete „vorbereitet“, bevor einer fertig war – auf dem knappen Rechner (ein Arbeits-Thread) bekam ein
+    Spieler an der Schanze seine Chunks dann minutenlang nicht (der Test-Spieler stand 2 Minuten ohne Boden). Jetzt
+    höchstens 8 gleichzeitig (`Construction.WARM_UP_OPEN`), „Strecken vorbereitet“ erst, wenn alle erzeugt sind (mit
+    Dauer); mitten in der Vorbereitung hatte der Test-Spieler seine Chunks nach 28 s. Der Weg über die Bonus-Ringe geht
+    wie der Musterflug ein Stück hinter das Ziel (der Autopilot kam sonst nicht an).
+  - Geprüft: 77 Unit-Tests (JUnit 6.1.3; neu u. a. Bonus-Flug ohne Anstoßen, Steinadler erreichbar, Tore/Bewegung/Böen,
     Treppe ohne Springen begehbar, Strecke des Tages zwei Wochen am Stück fliegbar, Vielfalt über 120 Tage), Paper 26.1
-    übersetzt. ECHTZAHL
+    übersetzt. Echter Test (`FRESH=1 test/run.sh`, Paper 26.1.2 + Test-Netzwerk, vier Test-Spieler, frisch erzeugte
+    Welt, Vorbereitung 602 s auf dem ausgelasteten Rechner): **81/81** in einem Lauf, Server-Log ohne Fehler – echter
+    Absprung, alle acht Strecken mit dem Test-Autopiloten durch jeden Ring ins Ziel (Felsenlabyrinth 14/14,
+    Höllenschlund 17/17, Gipfelkreuz 19/19 …), `playing` im Flug und danach nicht mehr, Bonus-Ring mit Gutschrift,
+    Strecke des Tages (Bedingungen, Tageszeit nur für den Flieger, 12/12 Ringe, `days`, Tages-Bestenliste, neuer Tag mit
+    leerer Liste, gleiche Bedingungen für gleichen Tag), Tor im Takt zu → zurück, im Takt offen → Ziel, Rennen,
+    Übungsmodus, Lobby fragt mitten im Flug nach (`askToLobby`), Gegenstand → Lobby. Vorher drei Läufe vom
+    Speicherwächter der Sandbox beendet bzw. mit dem Chunk-Fund oben rot. Echter Client 26.3 (über ViaVersion) die neue
+    Treppe nur mit W hinauf (kein Sprung), Bilder der neuen Strecken, Tore, Höhle, Strecke des Tages und Treppe
+    vorher/nachher nur lokal unter `~/mm-cache/bilder-adlerflug/v6/`.
 - Version 0.1.0 (Branch `claude/erster-stand`, noch nicht veröffentlicht – wartet auf Philips Go).
 - Sechs Strecken: Almrundflug (leicht, 12 Ringe), Klammflug (mittel, 11), Burgruine (mittel, 11), Gletscherspalte
   (schwer, 12), Stollenflug (schwer, 11), Gipfelkreuz (extrem, 19). Welt entsteht beim Erzeugen der Chunks aus dem
@@ -94,7 +109,13 @@ allein.
 
 ## Offen
 
-- Philip: Bilder ansehen (nur lokal unter `~/mm-cache/bilder-adlerflug/v5/`), selbst fliegen; Go für `main`.
+- Philip: Bilder ansehen (nur lokal unter `~/mm-cache/bilder-adlerflug/v6/`, ältere unter `v5/`), selbst fliegen;
+  Go für `main` mit 0.2.0.
+- Netzwerk-Repo: Einstellungs-Katalog um `strecke-des-tages` (an/aus) ergänzen; Webseite: neue Strecken
+  `felsenlabyrinth`, `hoellenschlund`, Strecke des Tages `tagesflug`, Statistik `bonus_rings`, `golden_eagles`, `days`,
+  Medaille Steinadler.
+- Nicht echt geprüft: Gleitflug durch bewegte Ringe, Tore und Wind mit einem echten Client von Hand (Bilder im
+  Test-Autopiloten), Bedrock, echter Hub.
 - Server-Betreiber: Ringe sind Block-Anzeigen – mit kleiner Sichtweite des Servers (`view-distance`) sieht man sie
   erst später; empfohlen 12 oder mehr.
 - Medaillen-Zeiten nach den ersten echten Flügen nachjustieren (heute aus dem Prüf-Piloten).

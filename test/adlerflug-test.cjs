@@ -576,11 +576,9 @@ async function main() {
   // ---------- Geist, Mitspieler, Lobby ----------
   clear(anna);
   anna.chat('/adlerflug geist');
-  await sleep(500);
-  check('Geist umschalten', sees(anna, /Geist (aus|an)/));
+  check('Geist umschalten', await waitFor(() => sees(anna, /Geist (aus|an)/), 5000, 200));
   anna.chat('/adlerflug verstecken');
-  await sleep(500);
-  check('Mitspieler ausblenden', sees(anna, /ausgeblendet/));
+  check('Mitspieler ausblenden', await waitFor(() => sees(anna, /ausgeblendet/), 5000, 200));
   anna.chat('/adlerflug verstecken');
   await sleep(300);
   check('Kein Schaden (Leben voll)', anna.health === 20 && bert.health === 20, `${anna.health}/${bert.health}`);
